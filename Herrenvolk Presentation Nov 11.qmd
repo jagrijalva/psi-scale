@@ -1,0 +1,394 @@
+---
+format:
+  beamer:
+    theme: Madrid
+    colortheme: default
+    fonttheme: structurebold
+    aspectratio: 169
+    toc: false
+    slide-level: 2
+    keep-tex: false
+header-includes: |
+  \usepackage{tikz}
+  \definecolor{NavyBlue}{RGB}{25,45,85}
+  \definecolor{CoralAccent}{RGB}{242,95,92}
+  \definecolor{SoftGray}{RGB}{100,100,100}
+  \setbeamercolor{structure}{fg=NavyBlue}
+  \setbeamercolor{title}{fg=NavyBlue}
+  \setbeamercolor{frametitle}{fg=white,bg=NavyBlue}
+  \setbeamercolor{block title}{fg=white,bg=CoralAccent}
+  \setbeamercolor{item}{fg=CoralAccent}
+  \setbeamertemplate{navigation symbols}{}
+  \setbeamertemplate{footline}{
+    \begin{tikzpicture}[remember picture,overlay]
+      \node[anchor=south east,inner sep=8pt] at (current page.south east) {
+        \includegraphics[width=0.8cm]{~/Desktop/Slides/QR Code.png}
+      };
+      \node[anchor=south west,inner sep=5pt,text=SoftGray] at (current page.south west) {
+        \tiny\insertframenumber
+      };
+    \end{tikzpicture}
+  }
+  \setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+  \setbeamerfont{title}{size=\huge,series=\bfseries}
+---
+
+# 
+
+\begin{tikzpicture}[remember picture,overlay]
+\node[anchor=west,inner sep=0pt] at ([xshift=0.5cm]current page.west) {
+  \includegraphics[height=0.95\paperheight,keepaspectratio]{~/Desktop/Slides/Levithan US.png}
+};
+\node[text width=0.45\paperwidth, align=left, fill=white, fill opacity=0.95, text opacity=1, rounded corners=8pt, inner sep=20pt, anchor=east] at ([xshift=-0.5cm]current page.east) {
+  {\Huge\bfseries\textcolor{NavyBlue}{The Herrenvolk Blindspot}}\\[0.4cm]
+  {\large\textcolor{SoftGray}{Power-Sharing, Tocqueville, and the Real Test of Democracy}}\\[1cm]
+  {\normalsize\textcolor{NavyBlue}{\textbf{Jessala Grijalva}}}\\[0.2cm]
+  {\small Postdoctoral Fellow, Institute for Latino Studies}\\
+  {\small University of Notre Dame}\\[0.4cm]
+  {\small November 11, 2025}
+};
+\end{tikzpicture}
+
+## V-Dem: Our Most Comprehensive Framework
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item Five dimensions of democracy tracked across 235+ years
+\item Electoral, Liberal, Participatory, Deliberative, Egalitarian
+\item \textbf{This represents the most sophisticated and comprehensive measurement framework in comparative politics}
+\item Used by scholars, policymakers, and international organizations as the authoritative standard for assessing democratic quality
+\item Captures institutional arrangements, procedural protections, and formal political rights across states and time
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/Fig2_Five_Dimensions.png}
+\end{column}
+\end{columns}
+
+## The Puzzle
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \textbf{0.48 = "moderately democratic"} for period 1789-1920
+\item \textbf{Reality check for this "moderately democratic" era:}
+  \begin{itemize}
+  \item 100\% of women excluded
+  \item Black Americans enslaved $\rightarrow$ disenfranchised $\rightarrow$ terrorized
+  \item White male monopoly on citizenship and power
+  \end{itemize}
+\item \textbf{Problem: Procedures look democratic while power stays monopolized}
+\item \textbf{Missing: Who actually holds power} vs. how institutions function
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/Fig1_VDem_Puzzle.png}
+\end{column}
+\end{columns}
+
+## The Measurement Gap
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{What we measure:}
+\begin{itemize}
+\item How institutions constrain each other
+\item Whether formal procedures exist
+\item Rights protections on paper
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{What we don't measure:}
+\begin{itemize}
+\item Which groups actually hold power
+\item Whether power is monopolized or shared
+\item Group exclusion vs. group inclusion
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.5cm}
+
+\textbf{\textcolor{CoralAccent}{Bottom line: Both matter for democracy. Only one has been systematically measured.}}
+
+## Democracy for the Master Race
+
+\begin{columns}[T]
+\begin{column}{0.35\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/Race and Racism Book Cover.jpg}
+\end{column}
+\begin{column}{0.6\textwidth}
+\begin{itemize}
+\item \textbf{Herrenvolk Democracy = democracy for the master race} (herren = master, volk = people)
+\item Van den Berghe (1967): \textbf{"Democracy for the master race, tyranny for subordinate groups"}
+\item \textbf{Core characteristics:}
+  \begin{itemize}
+  \item Functional democratic institutions among dominant group
+  \item Systematic exclusion of subordinate groups
+  \item Democratic and exclusionary components \textbf{mutually reinforcing}
+  \end{itemize}
+\item Found across cases: US Jim Crow, South African apartheid, colonial democracies
+\item \textbf{The measurement blindspot:}
+  \begin{itemize}
+  \item When exclusions are treated as aberrations, not features, measures focus on institutions
+  \item Result: \textbf{We measure institutional arrangements, miss group-level power monopolization}
+  \end{itemize}
+\end{itemize}
+\end{column}
+\end{columns}
+
+## The US Case: Herrenvolk Democracy by Design
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \textbf{1790 Naturalization Act:} Citizenship restricted to \textbf{"free white persons"}
+\item \textbf{First Congress, third law:} They codified herrenvolk democracy immediately---\textbf{not as evolution, but as foundation}
+\item Remained law for \textbf{162 years} (until 1952)
+\item \textbf{This created:}
+  \begin{itemize}
+  \item Legal monopoly on political power by one group
+  \item Functional democratic institutions within that group
+  \item Separation of powers, electoral competition, rights---\textbf{for some}
+  \end{itemize}
+\item \textbf{\textcolor{CoralAccent}{Herrenvolk democracy was the design, not a deviation}}
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/1790 Naturalization Act.png}
+\end{column}
+\end{columns}
+
+## Exclusion as System Maintenance
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\begin{itemize}
+\item These aren't just "bad things that happened"---\textbf{they're herrenvolk democracy maintenance}
+\item \textbf{1790-1952:} Only "free white persons" can naturalize \textbf{(162 years)}
+\item \textbf{1857:} Dred Scott - Black Americans cannot be citizens
+\item \textbf{1890s-1965:} Jim Crow disenfranchisement and terror
+\item \textbf{Through 1920:} All women excluded from political power
+\item \textbf{1924:} Indigenous peoples granted citizenship
+\item \textbf{Pattern continues:} Latino exclusion through conquest, deportation, contemporary restrictions
+\item \textbf{\textcolor{CoralAccent}{Each group faces systematic, legal exclusion from political power}}
+\end{itemize}
+\end{column}
+\begin{column}{0.4\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/US Map 1830s.png}
+\end{column}
+\end{columns}
+
+## Tocqueville Saw the Real Test
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\begin{itemize}
+\item \textbf{Tocqueville's observation:} \textit{"The prejudice of race appears stronger in states that abolished slavery"}
+\item \textbf{His prediction:} \textit{"Slavery recedes, but the prejudice to which it has given birth is immovable"}
+\item \textbf{The real question he was asking:} What happens to democracy when subordinate groups demand equality? \textbf{Will the dominant group share power?}
+\item Tocqueville identified \textbf{group-level power tensions as THE central challenge} to American democracy
+\item Yet \textbf{the herrenvolk democracy blindspot has persisted}---we haven't reckoned with his insight
+\end{itemize}
+\end{column}
+\begin{column}{0.4\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/Tocqueville.jpg}
+\end{column}
+\end{columns}
+
+## Power-Sharing: The Missing Dimension
+
+\begin{block}{Power-Sharing Democracy}
+Political power distributed across social groups, not monopolized
+\end{block}
+
+\vspace{0.3cm}
+
+\textbf{Why a distinct dimension:}
+
+\begin{itemize}
+\item Democratic theory recognizes group power-sharing as fundamental to democracy
+\item But it's \textbf{never been operationalized as a dimension} like electoral or liberal democracy
+\item You can have \textbf{high electoral + low power-sharing} (Jim Crow)
+\item You can have \textbf{high egalitarian + low power-sharing} (equality within restricted demos)
+\end{itemize}
+
+\vspace{0.3cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{V-Dem's five dimensions ask:} Do institutions check each other?
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Power-Sharing asks:} Do groups share power?
+\end{column}
+\end{columns}
+
+\vspace{0.2cm}
+
+\textbf{\textcolor{CoralAccent}{Both questions matter. We've measured one systematically, not the other.}}
+
+## Building the Power-Sharing Index
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \textbf{Built from 7 V-Dem indicators measuring group-level power dynamics:}
+  \begin{itemize}
+  \item Suffrage (\% with legal right to vote)
+  \item Social group equality in civil liberties
+  \item Gender power distribution
+  \item Women's and men's access to justice
+  \item Power distribution by social group
+  \item Class equality in civil liberties
+  \end{itemize}
+\item \textbf{Proof of concept:}
+  \begin{itemize}
+  \item Leverages V-Dem's existing data
+  \item Combined them to create a Power-Sharing measure
+  \item Demonstrates \textbf{we can measure group power-sharing systematically}
+  \end{itemize}
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/Power-Sharing Index.png}
+\end{column}
+\end{columns}
+
+## The Herrenvolk Democracy Gap
+
+\begin{center}
+\includegraphics[width=0.95\textwidth]{~/Desktop/Slides/Fig5_Herrenvolk_Gap.png}
+\end{center}
+
+## The Power-Sharing Index Captures What V-Dem Misses
+
+\begin{center}
+\includegraphics[width=0.9\textwidth]{~/Desktop/Slides/Fig4_Six_Dimensions.png}
+\end{center}
+
+## Contemporary Herrenvolk Dynamics
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{The standard story:}
+\begin{itemize}
+\item Institutions are breaking down
+\item Norms are eroding
+\item Democracy is backsliding
+\end{itemize}
+
+\vspace{0.3cm}
+
+\textbf{But look at what's actually happening:}
+\begin{itemize}
+\item Voter suppression targeting Black, Latino, and young voters
+\item Gerrymandering along racial lines
+\item Citizenship restrictions determining who belongs
+\item Attacks on diversity and inclusion
+\end{itemize}
+
+\vspace{0.3cm}
+
+\textbf{This isn't institutional decay. This is power-sharing contestation.}
+
+\textbf{The red flag:} If our measures missed herrenvolk democracy for 162 years, are they missing it now?
+\end{column}
+\begin{column}{0.48\textwidth}
+\includegraphics[width=\textwidth]{~/Desktop/Slides/Decline of Democracy 2025.png}
+\end{column}
+\end{columns}
+
+## Tocqueville's Question, America's Crossroads
+
+\textbf{The Tocqueville tension remains unresolved}
+
+\textbf{Herrenvolk democracy is still alive and well}---creating an unavoidable choice:
+
+\vspace{0.3cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Option 1: Multiracial Power-Sharing Democracy}
+\begin{itemize}
+\item Political power genuinely distributed across groups
+\item Multiracial coalition governance
+\item Would be \textbf{first time in 235 years}
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Option 2: Maintain Group Power Monopoly}
+\begin{itemize}
+\item Requires abandoning democratic forms
+\item Minority rule through institutional mechanisms
+\item Authoritarianism when power-sharing becomes impossible
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.5cm}
+
+\textbf{\textcolor{CoralAccent}{The Power-Sharing Index helps us understand these dynamics and tensions}}
+
+## Building a Better Power-Sharing Index
+
+\textbf{Current approach: Proof of concept using existing V-Dem data}
+
+\vspace{0.3cm}
+
+\textbf{What would ideal measures capture?}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \textbf{Direct representation by group} (actual vs. proportional seats in legislatures)
+\item \textbf{Economic power distribution} across groups (wealth, business ownership, capital control)
+\item \textbf{State violence patterns by group} (policing, incarceration, use of force)
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{itemize}
+\item \textbf{Policy responsiveness by group} (when groups mobilize, do policies change?)
+\item \textbf{Access to appointive offices} (cabinet, courts, bureaucracy)
+\item \textbf{Citizenship and naturalization patterns} (who gets in, how easily?)
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.5cm}
+
+\textbf{\textcolor{CoralAccent}{Question for discussion: What would strengthen this measurement approach?}}
+
+## The Book Project
+
+\textbf{The Herrenvolk Blindspot: Power-Sharing, Tocqueville, and the Real Test of Democracy}
+
+\vspace{0.3cm}
+
+\begin{itemize}
+\item \textbf{Chapter 1:} The Herrenvolk Blindspot
+\item \textbf{Chapter 2:} Democracy for the Master Race: Conceptual Foundations
+\item \textbf{Chapter 3:} Herrenvolk Democracy by Design, 1789-1865
+\item \textbf{Chapter 4:} Reconstruction and the Herrenvolk Restoration, 1865-1920
+\item \textbf{Chapter 5:} Partial Inclusion and the Long Civil Rights Era, 1920-1965
+\item \textbf{Chapter 6:} Contemporary Herrenvolk Dynamics, 1965-Present
+\item \textbf{Chapter 7:} Tocqueville's Question and Democracy's Real Test
+\end{itemize}
+
+\vspace{0.8cm}
+
+\textbf{Future 2nd Book:} \textit{Latino Politics and Herrenvolk Democracy: Immigration, Citizenship, and the Boundaries of the Demos}
+
+## 
+
+\begin{tikzpicture}[remember picture,overlay]
+\fill[NavyBlue] (current page.south west) rectangle (current page.north east);
+\node[text width=0.8\paperwidth, align=center, text=white] at (current page.center) {
+  {\Huge\bfseries Thank You}\\[1cm]
+  {\Large Thank you for taking the time to attend the ILS Colloquium today}\\[1.5cm]
+  {\large\textbf{Jessala Grijalva}}\\[0.3cm]
+  {\normalsize\texttt{jgrijalv@nd.edu}}\\[1cm]
+  \includegraphics[width=0.15\textwidth]{~/Desktop/Slides/QR Code.png}
+};
+\end{tikzpicture}
