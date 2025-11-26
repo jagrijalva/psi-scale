@@ -173,27 +173,25 @@ jc_mean <- mean(usa$power_sharing_index[jim_crow], na.rm = TRUE)
 pc_mean <- mean(usa$power_sharing_index[post_cr], na.rm = TRUE)
 gap <- pc_mean - jc_mean
 
-# Compare PSI discrimination to V-Dem's five dimensions
+# Compare PSI discrimination to V-Dem dimensions with full temporal coverage
+# Note: Egalitarian and Deliberative excluded (data starts 1900, not comparable)
 vdem_gaps <- tibble(
-  Measure = c("Power-Sharing", "Egalitarian", "Electoral", "Liberal", 
-              "Deliberative", "Participatory"),
+  Measure = c("Power-Sharing", "Electoral", "Liberal", "Participatory"),
   Gap = c(
     gap,
-    mean(usa$v2x_egaldem[post_cr], na.rm = TRUE) - mean(usa$v2x_egaldem[jim_crow], na.rm = TRUE),
     mean(usa$v2x_polyarchy[post_cr], na.rm = TRUE) - mean(usa$v2x_polyarchy[jim_crow], na.rm = TRUE),
     mean(usa$v2x_libdem[post_cr], na.rm = TRUE) - mean(usa$v2x_libdem[jim_crow], na.rm = TRUE),
-    mean(usa$v2x_delibdem[post_cr], na.rm = TRUE) - mean(usa$v2x_delibdem[jim_crow], na.rm = TRUE),
     mean(usa$v2x_partipdem[post_cr], na.rm = TRUE) - mean(usa$v2x_partipdem[jim_crow], na.rm = TRUE)
   )
 ) %>%
   arrange(desc(Gap))
 
-kable(vdem_gaps %>% mutate(Gap = round(Gap, 3)), 
-      caption = "Discrimination Power: Jim Crow (1877-1965) → Post-Civil Rights (1966-2024)") %>%
+kable(vdem_gaps %>% mutate(Gap = round(Gap, 3)),
+      caption = "Discrimination Power: Jim Crow (1877-1965) → Post-Civil Rights (1966-2024). Note: Egalitarian and Deliberative excluded (data starts 1900).") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 
-cat("\n✓ Power-Sharing gap:", round(gap, 3), 
-    "\n  (2x larger than Egalitarian:", round(vdem_gaps$Gap[vdem_gaps$Measure == "Egalitarian"], 3), ")\n")
+cat("\n✓ Power-Sharing gap:", round(gap, 3),
+    "\n  (Largest among indices with full 1789-2024 coverage)\n")
 ```
 
 ## Internal Consistency
@@ -220,23 +218,22 @@ if (alpha_val >= 0.90) cat(" (excellent)\n") else if (alpha_val >= 0.80) cat(" (
 **Interpretation:** High correlations (r > 0.80) indicate PSI measures democratic concepts, but the larger discrimination gap shows it captures something V-Dem indices miss.
 
 ```{r validation-correlations}
-# Pearson correlations with V-Dem's five democracy dimensions
+# Pearson correlations with V-Dem dimensions (full temporal coverage only)
+# Note: Egalitarian and Deliberative excluded (data starts 1900, not comparable)
 cors <- tibble(
-  Dimension = c("Electoral", "Liberal", "Participatory", "Deliberative", "Egalitarian"),
+  Dimension = c("Electoral", "Liberal", "Participatory"),
   Correlation = c(
     cor(usa$power_sharing_index, usa$v2x_polyarchy, use = "complete.obs"),
     cor(usa$power_sharing_index, usa$v2x_libdem, use = "complete.obs"),
-    cor(usa$power_sharing_index, usa$v2x_partipdem, use = "complete.obs"),
-    cor(usa$power_sharing_index, usa$v2x_delibdem, use = "complete.obs"),
-    cor(usa$power_sharing_index, usa$v2x_egaldem, use = "complete.obs")
+    cor(usa$power_sharing_index, usa$v2x_partipdem, use = "complete.obs")
   )
 )
 
-kable(cors %>% mutate(Correlation = round(Correlation, 3)), 
-      caption = "Correlations with V-Dem Democracy Dimensions") %>%
+kable(cors %>% mutate(Correlation = round(Correlation, 3)),
+      caption = "Correlations with V-Dem Democracy Dimensions (1789-2024). Note: Egalitarian and Deliberative excluded (data starts 1900).") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 
-cat("\n✓ High correlations (r > 0.95) indicate convergent validity\n")
+cat("\n✓ High correlations indicate convergent validity\n")
 cat("  PSI measures related democratic concepts but with greater discrimination power\n")
 ```
 
@@ -244,18 +241,18 @@ cat("  PSI measures related democratic concepts but with greater discrimination 
 
 ```{r validation-summary}
 validation_summary <- tibble(
-  Metric = c("Discrimination (Jim Crow → Post-CR)", 
+  Metric = c("Discrimination (Jim Crow → Post-CR)",
              "Internal Consistency (Cronbach's α)",
-             "Correlation with Egalitarian",
+             "Correlation with Electoral",
              "Temporal Coverage"),
   Value = c(
     sprintf("%.3f", gap),
     sprintf("%.3f", alpha_val),
-    sprintf("%.3f", cors$Correlation[cors$Dimension == "Egalitarian"]),
+    sprintf("%.3f", cors$Correlation[cors$Dimension == "Electoral"]),
     "1789-2024"
   ),
   Assessment = c(
-    "✓ 2x larger than Egalitarian",
+    "✓ Largest among full-coverage indices",
     "✓ Excellent (> 0.90)",
     "✓ Convergent validity",
     "✓ Full US history"
@@ -564,18 +561,18 @@ cat("✓ Saved: Fig6_Discrimination_Performance.png\n")
 **Benchmarks:**
 - Discrimination gap > 0.50 (substantial difference between periods)
 - Cronbach's α > 0.90 (excellent internal consistency)
-- Correlation with Egalitarian > 0.80 (convergent validity)
+- Correlation with Electoral > 0.80 (convergent validity)
 
 ```{r fig7, fig.width=10, fig.height=6}
 # Prepare validation metrics for visualization
 validation_viz <- tibble(
   Metric = c("Discrimination\n(Jim Crow → Post-CR)",
              "Internal Consistency\n(Cronbach's α)",
-             "Convergent Validity\n(r with Egalitarian)"),
-  Value = c(gap, alpha_val, cors$Correlation[cors$Dimension == "Egalitarian"]),
+             "Convergent Validity\n(r with Electoral)"),
+  Value = c(gap, alpha_val, cors$Correlation[cors$Dimension == "Electoral"]),
   Threshold = c(0.50, 0.90, 0.80),
-  Pass = c(gap > 0.50, alpha_val > 0.90, 
-           cors$Correlation[cors$Dimension == "Egalitarian"] > 0.80)
+  Pass = c(gap > 0.50, alpha_val > 0.90,
+           cors$Correlation[cors$Dimension == "Electoral"] > 0.80)
 )
 
 ggplot(validation_viz, aes(x = Metric, y = Value, fill = Pass)) +
