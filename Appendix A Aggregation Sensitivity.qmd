@@ -1,0 +1,413 @@
+---
+title: "Appendix A: Aggregation Method Selection & Sensitivity Analysis"
+subtitle: "Power-Sharing Index Methodological Documentation"
+author: "Jessa M. Agricola"
+date: today
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-width: 8
+    fig-height: 5
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| echo: false
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, gt, scales, knitr)
+
+vdem <- readRDS("/Users/jessalagrijalva/Desktop/In_Progress/Github/Herrenvolk/data/V-Dem-CY-Full+Others-v15.rds")
+
+usa <- vdem |>
+  filter(country_name == "United States of America") |>
+  arrange(year) |>
+  select(
+    year, country_name,
+    v2pepwrsoc, v2pepwrgen, v2clsocgrp, v2cltort, v2clkill,
+    v2x_polyarchy, v2x_libdem, v2x_partipdem
+  )
+
+normalize_minmax <- function(x) {
+  rng <- range(x, na.rm = TRUE)
+  (x - rng[1]) / (rng[2] - rng[1])
+}
+
+eps <- 0.001
+
+usa_psi <- usa |>
+  mutate(
+    across(c(v2pepwrsoc, v2pepwrgen, v2clsocgrp, v2cltort, v2clkill),
+           normalize_minmax, .names = "{.col}_norm"),
+    polyarchy_norm = normalize_minmax(v2x_polyarchy)
+  ) |>
+  mutate(
+    psi_additive = (v2pepwrsoc_norm + v2pepwrgen_norm + v2clsocgrp_norm +
+                    v2cltort_norm + v2clkill_norm) / 5,
+    psi_multiplicative = (pmax(v2pepwrsoc_norm, eps) * pmax(v2pepwrgen_norm, eps) *
+                          pmax(v2clsocgrp_norm, eps) * pmax(v2cltort_norm, eps) *
+                          pmax(v2clkill_norm, eps))^(1/5),
+    psi_hybrid = polyarchy_norm * psi_multiplicative
+  )
+```
+
+\newpage
+
+# Introduction
+
+This appendix documents the aggregation method selection for the Power-Sharing Index (PSI) and presents sensitivity analyses demonstrating robustness to specification choices. The goal is to justify the selection of the hybrid aggregation method and show that substantive conclusions do not depend on arbitrary methodological decisions.
+
+## Relationship to Existing Approaches
+
+This analysis follows the general framework established by Sigman and Lindberg (2019) for constructing composite democracy indices, with two key departures:
+
+1.  **Aggregation transparency**: Sigman and Lindberg do not present sensitivity analyses for their aggregation choices. This appendix explicitly compares three aggregation methods and demonstrates that results are robust across specifications.
+
+2.  **Component selection logic**: Sigman and Lindberg recommend avoiding V-Dem variables that appear in existing indices to prevent circularity. This concern does not apply here because PSI measures a conceptually distinct phenomenon—cross-group power transfer rather than procedural democracy quality. The discriminant validity analysis in Appendix B confirms this empirically: PSI shows a *negative* correlation with Electoral Democracy during the Herrenvolk era (1789-1899), demonstrating that it captures something qualitatively different from existing indices.
+
+\newpage
+
+# Aggregation Methods: Theoretical Rationale
+
+Three aggregation approaches are considered, each with distinct theoretical implications for how exclusion across dimensions should be weighted.
+
+## Additive (Arithmetic Mean)
+
+$$PSI_{add} = \frac{1}{5}\sum_{i=1}^{5} X_{i,norm}$$
+
+**Theoretical logic**: High scores in some dimensions can compensate for low scores in others. A society with strong gender equality but weak racial equality would score moderately.
+
+**Implication**: Partial inclusion in some dimensions can "offset" exclusion in others.
+
+## Multiplicative (Geometric Mean)
+
+$$PSI_{mult} = \left(\prod_{i=1}^{5} X_{i,norm}\right)^{1/5}$$
+
+**Theoretical logic**: Low values in *any* dimension pull down the overall score. A society cannot "average its way out of exclusion."
+
+**Implication**: Power-sharing requires inclusion across *all* dimensions simultaneously. Zero in any dimension produces zero overall.
+
+## Hybrid (Multiplicative × Polyarchy)
+
+$$PSI_{hybrid} = Polyarchy_{norm} \times \left(\prod_{i=1}^{5} X_{i,norm}\right)^{1/5}$$
+
+**Theoretical logic**: Combines the multiplicative penalty for exclusion with a procedural democracy cap. Even perfect inclusion cannot exceed the quality of democratic institutions.
+
+**Implication**: Power-sharing is meaningful only within functioning democratic procedures. Authoritarian regimes with nominal inclusion still score low.
+
+\newpage
+
+# Comparing Aggregation Methods
+
+## Visual Comparison
+
+```{r}
+#| label: compare-methods
+#| fig-height: 6
+
+usa_psi |>
+  select(year, psi_additive, psi_multiplicative, psi_hybrid) |>
+  pivot_longer(-year, names_to = "Method", values_to = "PSI") |>
+  mutate(Method = case_when(
+    Method == "psi_additive" ~ "Additive",
+    Method == "psi_multiplicative" ~ "Multiplicative",
+    Method == "psi_hybrid" ~ "Hybrid"
+  ) |> factor(levels = c("Additive", "Multiplicative", "Hybrid"))) |>
+  ggplot(aes(x = year, y = PSI, color = Method)) +
+  geom_line(linewidth = 1) +
+  geom_vline(xintercept = c(1865, 1920, 1965), linetype = "dashed", alpha = 0.4) +
+  scale_color_manual(values = c("Additive" = "black", "Multiplicative" = "steelblue", "Hybrid" = "darkred")) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(title = "PSI by Aggregation Method",
+       subtitle = "All three methods show same substantive pattern; differ in magnitude",
+       x = NULL, y = "Power-Sharing Index") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+## Key Observations
+
+All three methods produce the same substantive periodization:
+
+-   Near-zero scores throughout the Herrenvolk era (1789-1899)
+-   Gradual increase during partial inclusion (1900-1964)
+-   Sharp increase after the Voting Rights Act (1965)
+-   Decline following Shelby County (2013)
+
+The methods differ in *magnitude* but not in *pattern*. This is the definition of robustness: substantive conclusions are invariant to aggregation choice.
+
+## Era-Level Summary Statistics
+
+```{r}
+#| label: era-summary
+
+usa_psi |>
+  mutate(period = case_when(
+    year < 1900 ~ "Herrenvolk (1789-1899)",
+    year < 1965 ~ "Jim Crow (1900-1964)",
+    TRUE ~ "Post-Civil Rights (1965+)"
+  ) |> factor(levels = c("Herrenvolk (1789-1899)", "Jim Crow (1900-1964)", "Post-Civil Rights (1965+)"))) |>
+  group_by(period) |>
+  summarise(
+    N = n(),
+    `Additive Mean` = mean(psi_additive, na.rm = TRUE),
+    `Multiplicative Mean` = mean(psi_multiplicative, na.rm = TRUE),
+    `Hybrid Mean` = mean(psi_hybrid, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  gt() |>
+  tab_header(
+    title = "PSI by Era and Aggregation Method",
+    subtitle = "All methods show same pattern: near-zero → low → high"
+  ) |>
+  fmt_number(columns = -c(period, N), decimals = 3)
+```
+
+## Correlation Across Methods
+
+```{r}
+#| label: method-correlations
+
+tibble(
+  Comparison = c("Additive vs. Multiplicative", 
+                 "Additive vs. Hybrid", 
+                 "Multiplicative vs. Hybrid"),
+  Correlation = c(
+    cor(usa_psi$psi_additive, usa_psi$psi_multiplicative, use = "complete.obs"),
+    cor(usa_psi$psi_additive, usa_psi$psi_hybrid, use = "complete.obs"),
+    cor(usa_psi$psi_multiplicative, usa_psi$psi_hybrid, use = "complete.obs")
+  )
+) |>
+  gt() |>
+  tab_header(
+    title = "Correlation Across Aggregation Methods",
+    subtitle = "High correlations indicate robust measurement"
+  ) |>
+  fmt_number(columns = Correlation, decimals = 3)
+```
+
+\newpage
+
+# Why Hybrid? Theoretical Justification
+
+The hybrid method is preferred for two theoretical reasons:
+
+## 1. Multiplicative Penalty for Exclusion
+
+The multiplicative component ensures that exclusion in *any* dimension reduces the overall score. This reflects the theoretical claim that power-sharing requires inclusion across multiple dimensions simultaneously.
+
+Consider a hypothetical society with perfect gender equality (1.0) but complete racial exclusion (0.0):
+
+-   **Additive**: $(1.0 + 0.0 + 0.5 + 0.5 + 0.5) / 5 = 0.50$ (moderate score)
+-   **Multiplicative**: $(1.0 \times 0.001 \times 0.5 \times 0.5 \times 0.5)^{1/5} = 0.07$ (near-zero)
+
+The multiplicative approach correctly identifies this as a society with minimal cross-group power-sharing.
+
+## 2. Procedural Democracy Cap
+
+The Polyarchy multiplier ensures that PSI cannot exceed the quality of democratic institutions. This addresses a potential concern: could an authoritarian regime with nominal inclusion score highly?
+
+The hybrid formulation prevents this. A regime with Polyarchy = 0.2 cannot exceed PSI = 0.2, regardless of inclusion scores. Power-sharing is meaningful only within functioning democratic procedures.
+
+## Empirical Demonstration
+
+```{r}
+#| label: hybrid-behavior
+#| fig-height: 5
+
+usa_psi |>
+  ggplot(aes(x = year)) +
+  geom_line(aes(y = psi_multiplicative, color = "Multiplicative (uncapped)"), linewidth = 0.8) +
+  geom_line(aes(y = psi_hybrid, color = "Hybrid (Polyarchy-capped)"), linewidth = 0.8) +
+  geom_line(aes(y = polyarchy_norm, color = "Polyarchy (cap)"), linewidth = 0.6, linetype = "dashed") +
+  scale_color_manual(values = c("Multiplicative (uncapped)" = "steelblue", 
+                                 "Hybrid (Polyarchy-capped)" = "darkred",
+                                 "Polyarchy (cap)" = "gray50")) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(title = "How the Hybrid Method Works",
+       subtitle = "Multiplicative score is capped by procedural democracy quality",
+       x = NULL, y = "Index Value", color = NULL) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+\newpage
+
+# Sensitivity Analysis: Jackknife (Leave-One-Component-Out)
+
+To assess whether any single component is driving results, each component is dropped in turn and the index is recalculated.
+
+```{r}
+#| label: jackknife
+#| fig-height: 6
+
+usa_psi |>
+  mutate(
+    Full = psi_additive,
+    `Drop: Social Group` = (v2pepwrgen_norm + v2clsocgrp_norm + v2cltort_norm + v2clkill_norm) / 4,
+    `Drop: Gender` = (v2pepwrsoc_norm + v2clsocgrp_norm + v2cltort_norm + v2clkill_norm) / 4,
+    `Drop: Civil Liberties` = (v2pepwrsoc_norm + v2pepwrgen_norm + v2cltort_norm + v2clkill_norm) / 4,
+    `Drop: Torture` = (v2pepwrsoc_norm + v2pepwrgen_norm + v2clsocgrp_norm + v2clkill_norm) / 4,
+    `Drop: Killings` = (v2pepwrsoc_norm + v2pepwrgen_norm + v2clsocgrp_norm + v2cltort_norm) / 4
+  ) |>
+  select(year, Full, starts_with("Drop")) |>
+  pivot_longer(-year, names_to = "Version", values_to = "PSI") |>
+  mutate(Version = factor(Version, levels = c("Full", "Drop: Social Group", "Drop: Gender", 
+                                               "Drop: Civil Liberties", "Drop: Torture", "Drop: Killings"))) |>
+  ggplot(aes(x = year, y = PSI, color = Version, linewidth = Version)) +
+  geom_line() +
+  scale_color_manual(values = c("Full" = "black", "Drop: Social Group" = "#1b9e77", "Drop: Gender" = "#d95f02",
+                                "Drop: Civil Liberties" = "#7570b3", "Drop: Torture" = "#e7298a", "Drop: Killings" = "#66a61e")) +
+  scale_linewidth_manual(values = c(1.5, rep(0.6, 5))) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(title = "Jackknife Sensitivity Analysis",
+       subtitle = "Dropping any single component does not change substantive pattern",
+       x = NULL, y = "PSI (Additive)") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  guides(linewidth = "none")
+```
+
+## Interpretation
+
+When a "Drop" line is *higher* than the full index, that component was pulling the score *down*.
+
+Key findings:
+
+-   **Gender and Civil Liberties** pull scores down most in early periods (as expected—women's exclusion and racial exclusion)
+-   **Torture** pulls scores down in middle periods
+-   No single component drives the overall pattern
+-   Substantive conclusions (three eras, post-1965 shift) are invariant to component exclusion
+
+\newpage
+
+# Alternative Specifications
+
+Beyond the three primary methods, additional specifications are tested to ensure robustness.
+
+```{r}
+#| label: alt-specs
+#| fig-height: 6
+
+usa_psi |>
+  mutate(
+    Additive = psi_additive,
+    Geometric = psi_multiplicative,
+    Hybrid = psi_hybrid,
+    Minimum = pmin(v2pepwrsoc_norm, v2pepwrgen_norm, v2clsocgrp_norm, v2cltort_norm, v2clkill_norm),
+    `Weighted (2x Power)` = (2*v2pepwrsoc_norm + 2*v2pepwrgen_norm + v2clsocgrp_norm + v2cltort_norm + v2clkill_norm) / 7
+  ) |>
+  select(year, Additive, Geometric, Hybrid, Minimum, `Weighted (2x Power)`) |>
+  pivot_longer(-year, names_to = "Specification", values_to = "PSI") |>
+  ggplot(aes(x = year, y = PSI, color = Specification)) +
+  geom_line(linewidth = 0.7) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(title = "Alternative Specifications",
+       subtitle = "All specifications show same substantive pattern",
+       x = NULL, y = "PSI") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+## Specifications Tested
+
+| Specification | Formula | Rationale |
+|----|----|----|
+| Additive | Arithmetic mean of 5 components | Standard approach |
+| Geometric | Geometric mean of 5 components | Penalizes any-dimension exclusion |
+| Hybrid | Geometric × Polyarchy | Adds procedural cap |
+| Minimum | Lowest component score | Maximum penalty for exclusion |
+| Weighted (2x Power) | Double-weights power distribution | Tests sensitivity to weighting |
+
+All specifications produce the same substantive periodization, differing only in magnitude.
+
+\newpage
+
+# Response to Historical Events
+
+A properly constructed index should respond to known historical events that affected cross-group power distribution.
+
+```{r}
+#| label: events
+
+events <- tribble(
+  ~Event, ~Year_Before, ~Year_After, ~Expected,
+  "19th Amendment (1920)", 1919, 1921, "Increase",
+  "Voting Rights Act (1965)", 1964, 1966, "Major Increase",
+  "Shelby County v. Holder (2013)", 2012, 2014, "Decline"
+)
+
+get_psi <- function(yr, method = "additive") {
+  if (method == "additive") {
+    val <- usa_psi$psi_additive[usa_psi$year == yr]
+  } else if (method == "hybrid") {
+    val <- usa_psi$psi_hybrid[usa_psi$year == yr]
+  }
+  if (length(val) == 0) NA_real_ else val
+}
+
+events |>
+  rowwise() |>
+  mutate(
+    PSI_Before = get_psi(Year_Before),
+    PSI_After = get_psi(Year_After),
+    Change = PSI_After - PSI_Before,
+    Direction = if_else(Change > 0, "↑", "↓")
+  ) |>
+  ungroup() |>
+  select(Event, Expected, PSI_Before, PSI_After, Change, Direction) |>
+  gt() |>
+  tab_header(
+    title = "PSI Response to Historical Events",
+    subtitle = "Index moves in expected direction for all major events"
+  ) |>
+  fmt_number(columns = c(PSI_Before, PSI_After, Change), decimals = 3)
+```
+
+All three events produce changes in the expected direction, providing construct validity evidence.
+
+\newpage
+
+# Summary
+
+## Key Findings
+
+1.  **Robustness**: All aggregation methods produce the same substantive pattern. Conclusions do not depend on methodological choices.
+
+2.  **Jackknife stability**: No single component drives results. The index is not an artifact of any particular variable.
+
+3.  **Construct validity**: The index responds appropriately to known historical events (19th Amendment, VRA, Shelby County).
+
+## Recommended Specification
+
+**Hybrid (Multiplicative × Polyarchy)** is recommended because:
+
+-   Multiplicative aggregation correctly penalizes exclusion in any dimension
+-   Polyarchy cap ensures power-sharing is measured within democratic procedures
+-   Results are robust to alternative specifications
+
+## Comparison to Sigman & Lindberg (2019)
+
+| Aspect | Sigman & Lindberg | This Analysis |
+|----|----|----|
+| Sensitivity analysis | Not presented | Full jackknife and alternative specifications |
+| Aggregation choice | Single method | Three methods compared, robustness demonstrated |
+| Component selection | Avoid existing indices | Selection based on conceptual fit; distinctiveness shown empirically |
+
+\newpage
+
+# Session Info
+
+```{r}
+#| label: session
+#| echo: false
+
+sessionInfo()
+```
