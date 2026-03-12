@@ -1,1 +1,33 @@
-*.rds
+# Scratch folder
+scratch/
+
+# Raw data - too large for GitHub (download from v-dem.net)
+data/raw/
+
+# R and RStudio
+.Rhistory
+.Rdata
+.RDataTmp
+.Ruserdata
+.Rproj.user/
+
+# Quarto render artifacts
+*_files/
+*_cache/
+/.quarto/
+
+# Rendered output (reproduce via Quarto)
+*.pdf
+*.html
+*.tex
+
+# Large image files
+*.tiff
+
+# Mac system files
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp
+*~
