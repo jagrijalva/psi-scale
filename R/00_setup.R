@@ -42,18 +42,19 @@ VDEM_INDEX_LABELS <- c(
 )
 
 # ── Historical Era Definitions ───────────────────────────────────────────────
+# Updated to match Herrenvolk Democracy manuscript periodization
 assign_era <- function(year) {
   case_when(
-    year < 1865 ~ "Herrenvolk Democracy (1789-1865)",
-    year < 1877 ~ "Reconstruction (1865-1877)",
-    year < 1965 ~ "Partial Inclusion (1877-1965)",
-    TRUE        ~ "Power-Sharing Dilemma (1965+)"
+    year < 1865 ~ "Herrenvolk by Design (1776\u20131865)",
+    year < 1896 ~ "The First Opening (1865\u20131896)",
+    year < 1965 ~ "Partial Inclusion (1896\u20131965)",
+    TRUE        ~ "The Second Opening (1965\u2013Present)"
   ) |>
     factor(levels = c(
-      "Herrenvolk Democracy (1789-1865)",
-      "Reconstruction (1865-1877)",
-      "Partial Inclusion (1877-1965)",
-      "Power-Sharing Dilemma (1965+)"
+      "Herrenvolk by Design (1776\u20131865)",
+      "The First Opening (1865\u20131896)",
+      "Partial Inclusion (1896\u20131965)",
+      "The Second Opening (1965\u2013Present)"
     ))
 }
 
@@ -94,10 +95,10 @@ VDEM_COLORS <- c(
 
 # Era shading colors
 ERA_FILLS <- c(
-  "Herrenvolk Democracy (1789-1865)" = "#F8D7DA",   # Light red
-  "Reconstruction (1865-1877)"       = "#D4EDDA",   # Light green
-  "Partial Inclusion (1877-1965)"    = "#D6E9F8",   # Light blue
-  "Power-Sharing Dilemma (1965+)"    = "#FFF9DB"    # Light yellow
+  "Herrenvolk by Design (1776\u20131865)" = "#F8D7DA",   # Light red
+  "The First Opening (1865\u20131896)"     = "#D4EDDA",   # Light green
+  "Partial Inclusion (1896\u20131965)"     = "#FFF3CD",   # Light yellow
+  "The Second Opening (1965\u2013Present)" = "#D6E9F8"    # Light blue
 )
 
 # Figure dimensions and DPI

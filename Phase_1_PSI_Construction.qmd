@@ -27,7 +27,7 @@ execute:
 source(here::here("R", "00_setup.R"))
 
 # ── Load V-Dem Data ──────────────────────────────────────────────────────────
-vdem <- readRDS(here("data", "raw", "V-Dem-CY-Full+Others-v15.rds"))
+vdem <- readRDS(here("data", "raw", "V-Dem-CY-Full+Others-v16.rds"))
 
 usa <- vdem |>
   filter(country_name == "United States of America") |>
