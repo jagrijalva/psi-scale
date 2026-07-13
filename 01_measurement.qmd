@@ -1,0 +1,1092 @@
+---
+title: "01 Measurement"
+subtitle: "Power-Sharing Index construction and validation"
+author: "Jessala A. Grijalva"
+date: today
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: false
+    pdf-engine: xelatex
+    geometry:
+      - landscape
+      - margin=0.65in
+    include-in-header:
+      text: |
+        \usepackage{float}
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+# Purpose
+
+This file constructs the Power-Sharing Index (PSI) for the U.S. case using V-Dem data, checks basic measurement properties, compares aggregation choices, propagates V-Dem measurement uncertainty into the exported series, standardizes Polity2 as an optional external procedural-democracy comparator, and exports the derived PSI dataset for downstream analysis. The PDF is meant to be a lean replication document: figures render inside the PDF only, and publication graphics are generated separately when needed.
+
+# Setup
+
+```{r}
+#| label: setup
+
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  tidyverse,
+  here,
+  gt,
+  scales,
+  psych,
+  ggcorrplot,
+  knitr
+)
+
+dir.create(here::here("data", "derived"), recursive = TRUE, showWarnings = FALSE)
+
+# Okabe-Ito colorblind-safe palette.
+# Use named constants; do not inline hex codes in plots.
+OI_BLACK <- "#000000"
+OI_ORANGE <- "#E69F00"
+OI_SKY_BLUE <- "#56B4E9"
+OI_BLUISH_GREEN <- "#009E73"
+OI_YELLOW <- "#F0E442"
+OI_BLUE <- "#0072B2"
+OI_VERMILLION <- "#D55E00"
+OI_REDDISH_PURPLE <- "#CC79A7"
+
+PSI_COLOR <- OI_BLUE
+ELEC_COLOR <- OI_ORANGE
+GRID_COLOR <- "gray85"
+TABLE_KEEP <- "#DCECCB"
+TABLE_EXCLUDE <- "#F4CCCC"
+BASE_FONT <- ""
+GEOMETRIC_FLOOR <- 0.01
+
+theme_psi <- function(base_size = 11) {
+  theme_minimal(base_size = base_size, base_family = BASE_FONT) +
+    theme(
+      legend.position = "bottom",
+      axis.text = element_text(size = rel(0.85)),
+      axis.title = element_text(size = rel(0.95)),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = GRID_COLOR, linewidth = 0.25),
+      plot.title = element_blank(),
+      plot.subtitle = element_blank(),
+      plot.caption = element_blank()
+    )
+}
+
+gt_readable <- function(data) {
+  data |>
+    gt() |>
+    tab_options(
+      table.width = pct(96),
+      table.font.size = px(10),
+      data_row.padding = px(3),
+      column_labels.padding = px(4),
+      heading.padding = px(5),
+      latex.tbl.pos = "H"
+    )
+}
+
+safe_cor <- function(x, y) {
+  ok <- complete.cases(x, y)
+  if (sum(ok) < 3) return(NA_real_)
+  if (sd(x[ok]) == 0 || sd(y[ok]) == 0) return(NA_real_)
+  cor(x[ok], y[ok])
+}
+
+normalize_01 <- function(x) {
+  rng <- range(x, na.rm = TRUE)
+  if (!all(is.finite(rng)) || diff(rng) == 0) {
+    return(rep(NA_real_, length(x)))
+  }
+  (x - rng[1]) / diff(rng)
+}
+
+normalize_01_bounds <- function(x, reference) {
+  rng <- range(reference, na.rm = TRUE)
+  if (!all(is.finite(rng)) || diff(rng) == 0) {
+    return(rep(NA_real_, length(x)))
+  }
+  pmin(pmax((x - rng[1]) / diff(rng), 0), 1)
+}
+```
+
+# Load V-Dem data
+
+Raw V-Dem data are expected in `data/raw/` and are not included in the GitHub repository. This file reads the local V-Dem file and records the source file, row count, and column count used for replication.
+
+```{r}
+#| label: load-vdem
+
+load_vdem_file <- function(path) {
+  ext <- tools::file_ext(path) |> tolower()
+
+  if (ext == "rds") {
+    return(readRDS(path) |> as_tibble())
+  }
+
+  if (ext == "csv") {
+    return(readr::read_csv(path, show_col_types = FALSE) |> as_tibble())
+  }
+
+  if (ext %in% c("rda", "rdata")) {
+    env <- new.env(parent = emptyenv())
+    load(path, envir = env)
+    objects <- as.list(env)
+    data_objects <- objects[vapply(objects, is.data.frame, logical(1))]
+
+    if (length(data_objects) == 0) {
+      stop("No data frame found inside ", basename(path))
+    }
+
+    sizes <- vapply(data_objects, function(x) nrow(x) * ncol(x), numeric(1))
+    return(data_objects[[which.max(sizes)]] |> as_tibble())
+  }
+
+  stop("Unsupported raw data file type: ", basename(path))
+}
+
+expected_vdem_file <- here::here("data", "raw", "V-Dem-CY-Full+Others-v16.rds")
+
+if (!file.exists(expected_vdem_file)) {
+  stop(
+    "Expected V-Dem file not found: data/raw/V-Dem-CY-Full+Others-v16.rds. ",
+    "Download V-Dem v16 directly from V-Dem and place that exact file in data/raw/."
+  )
+}
+
+vdem_path <- expected_vdem_file
+vdem <- load_vdem_file(vdem_path)
+
+vdem_version <- case_when(
+  str_detect(basename(vdem_path), "v16") ~ "v16",
+  TRUE ~ "Unspecified"
+)
+
+tibble(
+  `Raw file` = basename(vdem_path),
+  `V-Dem version` = vdem_version,
+  Rows = nrow(vdem),
+  Columns = ncol(vdem)
+) |>
+  gt_readable() |>
+  tab_header(title = "Loaded V-Dem Data")
+```
+
+
+# Filter U.S. case
+
+The analysis uses the U.S. country-year series available in V-Dem from 1789 forward. Because the goal is to measure as much of American democratic development as the data allow, the core PSI prioritizes indicators with full coverage from 1789 rather than indicators that begin in 1900 and miss the first century of the series.
+
+```{r}
+#| label: filter-us
+
+if ("country_text_id" %in% names(vdem)) {
+  usa <- vdem |> filter(country_text_id == "USA")
+} else if ("country_name" %in% names(vdem)) {
+  usa <- vdem |> filter(str_detect(country_name, "United States"))
+} else if ("v2cname" %in% names(vdem)) {
+  usa <- vdem |> filter(str_detect(v2cname, "United States"))
+} else {
+  stop("Could not identify a country-name or country-code column for filtering the U.S. case.")
+}
+
+if (nrow(usa) == 0) {
+  stop("U.S. case not found. Check the country identifier in the V-Dem file.")
+}
+
+usa <- usa |>
+  filter(year >= 1789) |>
+  arrange(year)
+
+tibble(
+  Country = "United States",
+  `First year` = min(usa$year, na.rm = TRUE),
+  `Last year` = max(usa$year, na.rm = TRUE),
+  `Country-years` = nrow(usa)
+) |>
+  gt_readable() |>
+  tab_header(title = "U.S. Analysis Sample")
+```
+
+# Define PSI components
+
+PSI is constructed from five indicators that capture political power-sharing, equal civil standing, and coercive restraint.
+
+```{r}
+#| label: define-components
+
+psi_components <- c(
+  v2pepwrsoc = "Social Group Power",
+  v2pepwrgen = "Gender Power",
+  v2clsocgrp = "Civil Liberties Equality",
+  v2cltort   = "Freedom from Torture",
+  v2clkill   = "Freedom from Killings"
+)
+
+component_dimensions <- tibble(
+  Dimension = c(
+    "Political power-sharing",
+    "Political power-sharing",
+    "Equal civil standing",
+    "Coercive restraint",
+    "Coercive restraint"
+  ),
+  Variable = names(psi_components),
+  Component = unname(psi_components),
+  Interpretation = c(
+    "Political power distributed across social groups",
+    "Political power distributed across gender",
+    "Civil liberties protected across social groups",
+    "State restraint from torture",
+    "State restraint from political killings"
+  )
+)
+
+missing_components <- setdiff(names(psi_components), names(usa))
+
+if (length(missing_components) > 0) {
+  stop("Missing required PSI component(s): ", paste(missing_components, collapse = ", "))
+}
+
+component_dimensions |>
+  gt_readable() |>
+  tab_header(title = "PSI Components")
+```
+
+\newpage
+
+# Variable selection checks
+
+The core selection constraint is historical coverage: the U.S. series begins in 1789, so core PSI indicators should cover the full available period. Indicators that begin in 1900 may be useful for supplementary analyses, but they are not used in the core measure because they miss the first century of American democratic development.
+
+```{r}
+#| label: temporal-coverage
+
+candidate_vars <- c(
+  "v2pepwrsoc", "v2pepwrgen", "v2peapssoc",
+  "v2clsocgrp", "v2cltort", "v2clkill",
+  "v2x_suffr", "v2clpolcl"
+)
+
+candidate_labels <- c(
+  v2pepwrsoc = "Social group power",
+  v2pepwrgen = "Gender power",
+  v2peapssoc = "Access to public services by social group",
+  v2clsocgrp = "Civil liberties equality by social group",
+  v2cltort = "Freedom from torture",
+  v2clkill = "Freedom from political killings",
+  v2x_suffr = "Suffrage",
+  v2clpolcl = "Political civil liberties"
+)
+
+candidate_vars_present <- intersect(candidate_vars, names(usa))
+
+temporal <- usa |>
+  summarise(
+    across(
+      all_of(candidate_vars_present),
+      ~ if (all(is.na(.x))) NA_real_ else min(year[!is.na(.x)])
+    )
+  ) |>
+  pivot_longer(everything(), names_to = "Variable", values_to = "First_Year") |>
+  mutate(
+    Indicator = recode(Variable, !!!candidate_labels),
+    Coverage = if_else(First_Year <= 1789, "Full from 1789", paste0("Partial from ", First_Year)),
+    Use = case_when(
+      Variable %in% names(psi_components) ~ "Core PSI",
+      Variable %in% c("v2peapssoc", "v2clpolcl") ~ "Exclude: begins in 1900",
+      Variable == "v2x_suffr" ~ "Exclude: procedural suffrage",
+      TRUE ~ "Not used"
+    ),
+    Rationale = case_when(
+      Variable %in% names(psi_components) ~ "Full historical coverage and conceptual fit",
+      Variable %in% c("v2peapssoc", "v2clpolcl") ~ "Misses the first century of the U.S. series",
+      Variable == "v2x_suffr" ~ "Captures electoral inclusion within the recognized demos rather than group power-sharing",
+      TRUE ~ ""
+    )
+  ) |>
+  select(Variable, Indicator, First_Year, Coverage, Use, Rationale)
+
+temporal |>
+  gt_readable() |>
+  tab_header(
+    title = "Candidate Indicator Screen",
+    subtitle = "Core PSI indicators prioritize full U.S. coverage from 1789"
+  ) |>
+  tab_style(
+    style = cell_fill(color = TABLE_KEEP),
+    locations = cells_body(rows = Use == "Core PSI")
+  ) |>
+  tab_style(
+    style = cell_fill(color = TABLE_EXCLUDE),
+    locations = cells_body(rows = str_detect(Use, "Exclude"))
+  )
+```
+
+\newpage
+
+# Construct PSI
+
+The five core indicators are normalized to a 0 to 1 scale within the U.S. historical series. Higher values indicate greater democratic power-sharing, and three aggregation rules are retained so downstream analysis can distinguish the transparent additive score from more restrictive geometric and hybrid specifications.
+
+```{r}
+#| label: construct-psi
+
+component_norm_vars <- paste0(names(psi_components), "_norm")
+component_low_vars <- paste0(names(psi_components), "_norm_low")
+component_high_vars <- paste0(names(psi_components), "_norm_high")
+
+usa_psi <- usa |>
+  mutate(
+    across(
+      all_of(names(psi_components)),
+      normalize_01,
+      .names = "{.col}_norm"
+    )
+  )
+
+for (component in names(psi_components)) {
+  low_col <- paste0(component, "_codelow")
+  high_col <- paste0(component, "_codehigh")
+
+  if (low_col %in% names(usa_psi)) {
+    usa_psi[[paste0(component, "_norm_low")]] <- normalize_01_bounds(
+      usa_psi[[low_col]],
+      usa_psi[[component]]
+    )
+  } else {
+    usa_psi[[paste0(component, "_norm_low")]] <- NA_real_
+  }
+
+  if (high_col %in% names(usa_psi)) {
+    usa_psi[[paste0(component, "_norm_high")]] <- normalize_01_bounds(
+      usa_psi[[high_col]],
+      usa_psi[[component]]
+    )
+  } else {
+    usa_psi[[paste0(component, "_norm_high")]] <- NA_real_
+  }
+}
+
+usa_psi <- usa_psi |>
+  mutate(
+    polyarchy_norm = if ("v2x_polyarchy" %in% names(usa_psi)) {
+      pmin(pmax(.data$v2x_polyarchy, 0), 1)
+    } else {
+      NA_real_
+    },
+    polyarchy_norm_low = if ("v2x_polyarchy_codelow" %in% names(usa_psi)) {
+      pmin(pmax(.data$v2x_polyarchy_codelow, 0), 1)
+    } else {
+      NA_real_
+    },
+    polyarchy_norm_high = if ("v2x_polyarchy_codehigh" %in% names(usa_psi)) {
+      pmin(pmax(.data$v2x_polyarchy_codehigh, 0), 1)
+    } else {
+      NA_real_
+    }
+  )
+
+# Standardize Polity2 once in the measurement file so downstream files do not
+# have to guess which raw V-Dem column is present. Prefer e_polity2 when it
+# exists. Fall back to e_p_polity only if e_polity2 is absent. Values outside
+# the ordinary Polity -10 to 10 range are special codes and are set to missing.
+polity_candidates <- c("e_polity2", "e_p_polity")
+polity_col <- intersect(polity_candidates, names(usa_psi))[1]
+
+if (is.na(polity_col)) {
+  usa_psi <- usa_psi |>
+    mutate(
+      polity2_raw = NA_real_,
+      polity2_01 = NA_real_,
+      polity2_source = NA_character_
+    )
+} else {
+  usa_psi <- usa_psi |>
+    mutate(
+      polity2_raw = as.numeric(.data[[polity_col]]),
+      polity2_raw = if_else(
+        !is.na(polity2_raw) & polity2_raw >= -10 & polity2_raw <= 10,
+        polity2_raw,
+        NA_real_
+      ),
+      polity2_01 = (polity2_raw + 10) / 20,
+      polity2_source = polity_col
+    )
+}
+
+usa_psi <- usa_psi |>
+  rowwise() |>
+  mutate(
+    psi_additive = mean(c_across(all_of(component_norm_vars)), na.rm = FALSE),
+    psi_additive_low = if (all(!is.na(c_across(all_of(component_low_vars))))) {
+      mean(c_across(all_of(component_low_vars)), na.rm = FALSE)
+    } else {
+      NA_real_
+    },
+    psi_additive_high = if (all(!is.na(c_across(all_of(component_high_vars))))) {
+      mean(c_across(all_of(component_high_vars)), na.rm = FALSE)
+    } else {
+      NA_real_
+    },
+    psi_geometric_raw = prod(c_across(all_of(component_norm_vars)), na.rm = FALSE)^(1 / length(component_norm_vars)),
+    psi_geometric = prod(pmax(c_across(all_of(component_norm_vars)), GEOMETRIC_FLOOR), na.rm = FALSE)^(1 / length(component_norm_vars)),
+    psi_hybrid = polyarchy_norm * psi_geometric,
+    psi_core = mean(c_across(all_of(c("v2pepwrsoc_norm", "v2pepwrgen_norm", "v2clsocgrp_norm"))), na.rm = FALSE),
+    psi_coercion = mean(c_across(all_of(c("v2cltort_norm", "v2clkill_norm"))), na.rm = FALSE),
+    psi_gated = psi_core * psi_coercion
+  ) |>
+  ungroup() |>
+  mutate(
+    era = case_when(
+      year <= 1865 ~ "Foundational Exclusion (1789-1865)",
+      year > 1865 & year <= 1896 ~ "First Opening for Multiracial Democracy (1866-1896)",
+      year > 1896 & year < 1965 ~ "Partial Inclusion and Retrenchment (1897-1964)",
+      year >= 1965 ~ "Second Opening for Multiracial Democracy (1965-present)"
+    ),
+    era = factor(
+      era,
+      levels = c(
+        "Foundational Exclusion (1789-1865)",
+        "First Opening for Multiracial Democracy (1866-1896)",
+        "Partial Inclusion and Retrenchment (1897-1964)",
+        "Second Opening for Multiracial Democracy (1965-present)"
+      )
+    )
+  )
+
+usa_psi |>
+  summarise(
+    `PSI additive min` = min(psi_additive, na.rm = TRUE),
+    `PSI additive max` = max(psi_additive, na.rm = TRUE),
+    `PSI geometric min` = min(psi_geometric, na.rm = TRUE),
+    `PSI geometric max` = max(psi_geometric, na.rm = TRUE),
+    `PSI gated min` = min(psi_gated, na.rm = TRUE),
+    `PSI gated max` = max(psi_gated, na.rm = TRUE),
+    `PSI hybrid min` = min(psi_hybrid, na.rm = TRUE),
+    `PSI hybrid max` = max(psi_hybrid, na.rm = TRUE)
+  ) |>
+  pivot_longer(everything(), names_to = "Statistic", values_to = "Value") |>
+  gt_readable() |>
+  tab_header(title = "Constructed PSI Specifications") |>
+  fmt_number(columns = Value, decimals = 3)
+```
+
+```{r}
+#| label: polity2-standardization-check
+
+polity2_coverage <- usa_psi |>
+  summarise(
+    Source = if (all(is.na(polity2_source))) "Not available" else first(na.omit(polity2_source)),
+    Coverage = if (all(is.na(polity2_01))) {
+      "Not available"
+    } else {
+      paste0(
+        min(year[!is.na(polity2_01)], na.rm = TRUE),
+        "-",
+        max(year[!is.na(polity2_01)], na.rm = TRUE)
+      )
+    },
+    `Usable country-years` = sum(!is.na(polity2_01)),
+    Scale = "Polity2 rescaled from -10 to 10 onto 0 to 1"
+  )
+
+polity2_coverage |>
+  gt_readable() |>
+  tab_header(
+    title = "Polity2 Standardization Check",
+    subtitle = "External comparator exported only for robustness checks"
+  )
+```
+
+The geometric specification uses a small floor (`0.01`) to prevent a single component at its historical minimum from mechanically reducing the full product to zero. The gated PSI separates the core power-sharing dimension from coercive restraint and multiplies them, providing a theory-driven robustness check.
+
+\newpage
+
+```{r}
+#| label: raw-component-diagnostic
+
+raw_component_diagnostic <- usa |>
+  filter(year >= 1850, year <= 1900) |>
+  select(year, all_of(names(psi_components)))
+
+raw_component_diagnostic |>
+  gt_readable() |>
+  tab_header(
+    title = "Raw Component Diagnostic, 1850-1900",
+    subtitle = "Unnormalized V-Dem indicators before PSI construction"
+  ) |>
+  fmt_number(columns = -year, decimals = 3)
+```
+
+This diagnostic checks whether limited movement in the First Opening period reflects the underlying V-Dem source indicators or the PSI construction pipeline. If the raw indicators are piecewise-constant, the flatness is a data-resolution feature rather than a normalization artifact.
+
+
+# Aggregation sensitivity
+
+This section compares additive, geometric, and hybrid aggregation rules. The purpose is to assess whether the substantive PSI trajectory depends on a particular formula or remains stable across reasonable specifications.
+
+```{r}
+#| label: aggregation-summary
+
+aggregation_summary <- usa_psi |>
+  group_by(era) |>
+  summarise(
+    N = n(),
+    `Additive mean` = mean(psi_additive, na.rm = TRUE),
+    `Geometric mean` = mean(psi_geometric, na.rm = TRUE),
+    `Gated mean` = mean(psi_gated, na.rm = TRUE),
+    `Hybrid mean` = mean(psi_hybrid, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+aggregation_summary |>
+  gt_readable() |>
+  tab_header(
+    title = "PSI by Era and Aggregation Method",
+    subtitle = "Era means, 0 to 1 scale"
+  ) |>
+  fmt_number(columns = -c(era, N), decimals = 3)
+```
+
+
+```{r}
+#| label: aggregation-plot
+#| fig-pos: H
+#| fig-width: 7
+#| fig-height: 4
+#| fig-cap: "PSI by aggregation method."
+
+aggregation_plot <- usa_psi |>
+  select(year, psi_additive, psi_geometric, psi_gated, psi_hybrid) |>
+  pivot_longer(-year, names_to = "Method", values_to = "PSI") |>
+  mutate(
+    Method = recode(
+      Method,
+      psi_additive = "Additive",
+      psi_geometric = "Geometric",
+      psi_gated = "Coercion-gated",
+      psi_hybrid = "Hybrid"
+    ),
+    Method = factor(Method, levels = c("Additive", "Geometric", "Coercion-gated", "Hybrid"))
+  ) |>
+  ggplot(aes(x = year, y = PSI, color = Method, linetype = Method)) +
+  geom_line(linewidth = 0.9) +
+  geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", alpha = 0.35) +
+  scale_color_manual(values = c(
+    "Additive" = OI_BLACK,
+    "Geometric" = OI_BLUISH_GREEN,
+    "Coercion-gated" = OI_VERMILLION,
+    "Hybrid" = PSI_COLOR
+  )) +
+  scale_linetype_manual(values = c(
+    "Additive" = "solid",
+    "Geometric" = "longdash",
+    "Coercion-gated" = "dashed",
+    "Hybrid" = "dotdash"
+  )) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(
+    x = NULL,
+    y = "Power-Sharing Index"
+  ) +
+  theme_psi()
+
+aggregation_plot
+```
+
+```{r}
+#| label: aggregation-correlations
+
+method_correlations <- tibble(
+  Comparison = c(
+    "Additive vs. Geometric",
+    "Additive vs. Gated",
+    "Additive vs. Hybrid",
+    "Geometric vs. Hybrid",
+    "Gated vs. Hybrid"
+  ),
+  Correlation = c(
+    safe_cor(usa_psi$psi_additive, usa_psi$psi_geometric),
+    safe_cor(usa_psi$psi_additive, usa_psi$psi_gated),
+    safe_cor(usa_psi$psi_additive, usa_psi$psi_hybrid),
+    safe_cor(usa_psi$psi_geometric, usa_psi$psi_hybrid),
+    safe_cor(usa_psi$psi_gated, usa_psi$psi_hybrid)
+  )
+)
+
+method_correlations |>
+  gt_readable() |>
+  tab_header(title = "Correlation Across Aggregation Methods") |>
+  fmt_number(columns = Correlation, decimals = 3)
+```
+
+# Component sensitivity
+
+This check recalculates the additive PSI after dropping each component in turn. If the overall pattern remains stable, the measure is less likely to be an artifact of any single indicator.
+
+```{r}
+#| label: jackknife-sensitivity
+#| fig-pos: H
+#| fig-width: 7
+#| fig-height: 4
+#| fig-cap: "Leave-one-component-out sensitivity check."
+
+jackknife_data <- usa_psi |>
+  mutate(
+    Full = psi_additive,
+    `Drop social group power` = rowMeans(pick(v2pepwrgen_norm, v2clsocgrp_norm, v2cltort_norm, v2clkill_norm), na.rm = FALSE),
+    `Drop gender power` = rowMeans(pick(v2pepwrsoc_norm, v2clsocgrp_norm, v2cltort_norm, v2clkill_norm), na.rm = FALSE),
+    `Drop civil liberties` = rowMeans(pick(v2pepwrsoc_norm, v2pepwrgen_norm, v2cltort_norm, v2clkill_norm), na.rm = FALSE),
+    `Drop torture` = rowMeans(pick(v2pepwrsoc_norm, v2pepwrgen_norm, v2clsocgrp_norm, v2clkill_norm), na.rm = FALSE),
+    `Drop killings` = rowMeans(pick(v2pepwrsoc_norm, v2pepwrgen_norm, v2clsocgrp_norm, v2cltort_norm), na.rm = FALSE)
+  ) |>
+  select(year, Full, starts_with("Drop")) |>
+  pivot_longer(-year, names_to = "Specification", values_to = "PSI")
+
+jackknife_plot <- jackknife_data |>
+  ggplot(aes(x = year, y = PSI, color = Specification, linewidth = Specification, linetype = Specification)) +
+  geom_line(alpha = 0.9) +
+  scale_color_manual(values = c(
+    "Full" = OI_BLACK,
+    "Drop social group power" = OI_BLUE,
+    "Drop gender power" = OI_VERMILLION,
+    "Drop civil liberties" = OI_REDDISH_PURPLE,
+    "Drop torture" = OI_SKY_BLUE,
+    "Drop killings" = OI_ORANGE
+  )) +
+  scale_linetype_manual(values = c(
+    "Full" = "solid",
+    "Drop social group power" = "longdash",
+    "Drop gender power" = "dashed",
+    "Drop civil liberties" = "dotdash",
+    "Drop torture" = "twodash",
+    "Drop killings" = "dotted"
+  )) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  scale_linewidth_manual(values = c("Full" = 1.1, rep(0.55, length(unique(jackknife_data$Specification)) - 1))) +
+  labs(
+    x = NULL,
+    y = "PSI additive"
+  ) +
+  guides(linewidth = "none") +
+  theme_psi()
+
+jackknife_plot
+```
+
+The overlapping lines are substantively meaningful: they show that no single component drives the historical trajectory. For a publication appendix, this diagnostic can be replaced with a more compact summary table if space is limited.
+
+# Alternative specifications
+
+Additional specifications test stronger and weaker assumptions about compensation across dimensions. The goal is not to select every possible formula, but to show that the core historical pattern is not fragile.
+
+```{r}
+#| label: alternative-specifications
+#| fig-pos: H
+#| fig-width: 7
+#| fig-height: 4
+#| fig-cap: "Alternative PSI specifications."
+
+alternative_data <- usa_psi |>
+  mutate(
+    Additive = psi_additive,
+    Geometric = psi_geometric,
+    `Coercion-gated` = psi_gated,
+    Hybrid = psi_hybrid,
+    Minimum = pmin(v2pepwrsoc_norm, v2pepwrgen_norm, v2clsocgrp_norm, v2cltort_norm, v2clkill_norm),
+    `Weighted power` = (
+      2 * v2pepwrsoc_norm +
+      2 * v2pepwrgen_norm +
+      v2clsocgrp_norm +
+      v2cltort_norm +
+      v2clkill_norm
+    ) / 7
+  ) |>
+  select(year, Additive, Geometric, `Coercion-gated`, Hybrid, Minimum, `Weighted power`) |>
+  pivot_longer(-year, names_to = "Specification", values_to = "PSI")
+
+alternative_plot <- alternative_data |>
+  ggplot(aes(x = year, y = PSI, color = Specification, linetype = Specification)) +
+  geom_line(linewidth = 0.75) +
+  scale_color_manual(values = c(
+    "Additive" = OI_BLACK,
+    "Geometric" = OI_BLUISH_GREEN,
+    "Coercion-gated" = OI_VERMILLION,
+    "Hybrid" = PSI_COLOR,
+    "Minimum" = OI_ORANGE,
+    "Weighted power" = OI_REDDISH_PURPLE
+  )) +
+  scale_linetype_manual(values = c(
+    "Additive" = "solid",
+    "Geometric" = "longdash",
+    "Coercion-gated" = "dashed",
+    "Hybrid" = "dotdash",
+    "Minimum" = "dashed",
+    "Weighted power" = "twodash"
+  )) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(
+    x = NULL,
+    y = "PSI"
+  ) +
+  theme_psi()
+
+alternative_plot
+```
+
+# Known-event response
+
+Known-event checks assess whether the PSI moves in expected directions around major institutional changes. These are descriptive validity checks, not causal estimates.
+
+```{r}
+#| label: event-response
+
+get_psi_value <- function(data, yr, var = "psi_additive") {
+  val <- data |> filter(year == yr) |> pull(all_of(var))
+  if (length(val) == 0) NA_real_ else val[1]
+}
+
+events <- tribble(
+  ~Event, ~Year_Before, ~Year_After, ~Expected,
+  "19th Amendment", 1919, 1921, "Increase",
+  "Voting Rights Act", 1964, 1966, "Increase",
+  "Shelby County v. Holder", 2012, 2014, "Decrease"
+)
+
+event_response <- events |>
+  rowwise() |>
+  mutate(
+    PSI_Before = get_psi_value(usa_psi, Year_Before, "psi_additive"),
+    PSI_After = get_psi_value(usa_psi, Year_After, "psi_additive"),
+    Change = PSI_After - PSI_Before,
+    Direction = if_else(Change > 0, "Increase", "Decrease")
+  ) |>
+  ungroup()
+
+event_response |>
+  gt_readable() |>
+  tab_header(
+    title = "PSI Response to Historical Events",
+    subtitle = "Additive specification, before-after comparisons"
+  ) |>
+  fmt_number(columns = c(PSI_Before, PSI_After, Change), decimals = 3)
+```
+
+\newpage
+
+# Internal consistency
+
+Internal consistency checks whether the five normalized components move together as a coherent empirical scale. The full correlation matrix is shown so all five indicators remain visible; reliability is interpreted alongside the theoretical justification and sensitivity checks.
+
+```{r}
+#| label: internal-consistency
+#| fig-pos: H
+#| fig-width: 6
+#| fig-height: 4
+#| fig-cap: "Inter-item correlations among normalized PSI components."
+
+normalized_components <- paste0(names(psi_components), "_norm")
+
+cor_data <- usa_psi |>
+  select(all_of(normalized_components)) |>
+  drop_na()
+
+cor_matrix <- cor(cor_data)
+colnames(cor_matrix) <- unname(psi_components)
+rownames(cor_matrix) <- unname(psi_components)
+
+cor_plot <- ggcorrplot(
+  cor_matrix,
+  type = "full",
+  lab = TRUE,
+  lab_size = 3,
+  colors = c(OI_SKY_BLUE, "white", OI_VERMILLION)
+)
+
+cor_plot
+
+alpha_result <- psych::alpha(cor_data, check.keys = FALSE)
+
+alpha_table <- tibble(
+  Metric = c("Raw alpha", "Standardized alpha", "Average inter-item r"),
+  Value = c(
+    alpha_result$total$raw_alpha,
+    alpha_result$total$std.alpha,
+    alpha_result$total$average_r
+  )
+)
+
+alpha_table |>
+  gt_readable() |>
+  tab_header(title = "Internal Consistency") |>
+  fmt_number(columns = Value, decimals = 3)
+```
+
+```{r}
+#| label: alpha-drop
+
+alpha_drop <- alpha_result$alpha.drop |>
+  as.data.frame() |>
+  rownames_to_column("Variable") |>
+  mutate(
+    Component = recode(
+      str_remove(Variable, "_norm$"),
+      !!!psi_components
+    )
+  ) |>
+  select(Component, raw_alpha, std.alpha)
+
+alpha_drop |>
+  gt_readable() |>
+  tab_header(title = "Alpha if Item Dropped") |>
+  fmt_number(columns = c(raw_alpha, std.alpha), decimals = 3)
+```
+
+# Dimensionality
+
+Dimensionality checks whether the indicators share a dominant empirical dimension. PCA and KMO results are used as diagnostics, not as substitutes for the theoretical definition of PSI.
+
+```{r}
+#| label: pca
+#| fig-pos: H
+#| fig-width: 6
+#| fig-height: 4
+#| fig-cap: "PCA scree plot for PSI components."
+
+pca_result <- prcomp(cor_data, scale. = TRUE)
+var_explained <- summary(pca_result)$importance[2, ] * 100
+
+pca_variance <- tibble(
+  PC = paste0("PC", seq_along(var_explained)),
+  `Variance explained` = as.numeric(var_explained),
+  `Cumulative variance` = cumsum(as.numeric(var_explained))
+)
+
+pca_variance |>
+  gt_readable() |>
+  tab_header(title = "PCA Variance Explained") |>
+  fmt_number(columns = c(`Variance explained`, `Cumulative variance`), decimals = 1)
+
+scree_plot <- pca_variance |>
+  mutate(PC = factor(PC, levels = PC)) |>
+  ggplot(aes(x = PC, y = `Variance explained`)) +
+  geom_col(fill = ELEC_COLOR, alpha = 0.85) +
+  geom_hline(yintercept = 20, linetype = "dashed", color = PSI_COLOR) +
+  scale_y_continuous(limits = c(0, 100), labels = \(x) paste0(x, "%")) +
+  labs(
+    x = NULL,
+    y = "Variance explained"
+  ) +
+  theme_psi()
+
+scree_plot
+```
+
+```{r}
+#| label: pca-loadings-kmo
+
+pca_loadings <- pca_result$rotation |>
+  as.data.frame() |>
+  rownames_to_column("Variable") |>
+  mutate(
+    Component = recode(
+      str_remove(Variable, "_norm$"),
+      !!!psi_components
+    )
+  ) |>
+  select(Component, PC1, PC2)
+
+pca_loadings |>
+  gt_readable() |>
+  tab_header(title = "PCA Loadings") |>
+  fmt_number(columns = c(PC1, PC2), decimals = 3)
+
+kmo_result <- psych::KMO(cor_data)
+
+kmo_table <- tibble(
+  Item = c("Overall MSA", unname(psi_components)),
+  KMO = c(kmo_result$MSA, kmo_result$MSAi)
+)
+
+kmo_table |>
+  gt_readable() |>
+  tab_header(title = "Kaiser-Meyer-Olkin Check") |>
+  fmt_number(columns = KMO, decimals = 3)
+```
+
+\newpage
+
+# V-Dem and external comparison checks
+
+PSI is compared with major V-Dem democracy indices and, when available, the standardized Polity2 score. The V-Dem indices share V-Dem's measurement architecture, so agreement with them is partly mechanical. Polity2 is coded by a separate project, so divergence from Polity2 is useful as external discriminant evidence. Era-specific correlations are especially useful because the theory expects divergence during periods when democratic procedures existed within restricted membership.
+
+```{r}
+#| label: vdem-polity-correlations
+
+vdem_compare <- intersect(
+  c("v2x_polyarchy", "v2x_libdem", "v2x_partipdem"),
+  names(usa_psi)
+)
+
+has_polity2 <- "polity2_01" %in% names(usa_psi) && any(!is.na(usa_psi$polity2_01))
+
+era_correlations <- usa_psi |>
+  group_by(era) |>
+  summarise(
+    N = n(),
+    `r(PSI, Electoral)` = if ("v2x_polyarchy" %in% names(cur_data())) safe_cor(psi_additive, v2x_polyarchy) else NA_real_,
+    `r(PSI, Liberal)` = if ("v2x_libdem" %in% names(cur_data())) safe_cor(psi_additive, v2x_libdem) else NA_real_,
+    `r(PSI, Participatory)` = if ("v2x_partipdem" %in% names(cur_data())) safe_cor(psi_additive, v2x_partipdem) else NA_real_,
+    `r(PSI, Polity2)` = if (has_polity2) safe_cor(psi_additive, polity2_01) else NA_real_,
+    .groups = "drop"
+  )
+
+era_correlations |>
+  gt_readable() |>
+  tab_header(
+    title = "Era-Specific Correlations",
+    subtitle = "PSI compared with V-Dem democracy indices and Polity2 when available"
+  ) |>
+  fmt_number(columns = -c(era, N), decimals = 3)
+
+full_correlations <- tibble(
+  Index = c("Electoral (V-Dem)", "Liberal (V-Dem)", "Participatory (V-Dem)", "Polity2 (external)"),
+  Correlation = c(
+    if ("v2x_polyarchy" %in% names(usa_psi)) safe_cor(usa_psi$psi_additive, usa_psi$v2x_polyarchy) else NA_real_,
+    if ("v2x_libdem" %in% names(usa_psi)) safe_cor(usa_psi$psi_additive, usa_psi$v2x_libdem) else NA_real_,
+    if ("v2x_partipdem" %in% names(usa_psi)) safe_cor(usa_psi$psi_additive, usa_psi$v2x_partipdem) else NA_real_,
+    if (has_polity2) safe_cor(usa_psi$psi_additive, usa_psi$polity2_01) else NA_real_
+  )
+)
+
+full_correlations |>
+  gt_readable() |>
+  tab_header(title = "Full-Series Correlations") |>
+  fmt_number(columns = Correlation, decimals = 3)
+```
+
+# Temporal stability
+
+These intervals summarize variation across years within eras. They are not V-Dem measurement uncertainty intervals.
+
+```{r}
+#| label: temporal-stability
+
+temporal_stability <- usa_psi |>
+  group_by(era) |>
+  summarise(
+    N = n(),
+    Mean = mean(psi_additive, na.rm = TRUE),
+    SD = sd(psi_additive, na.rm = TRUE),
+    SE = SD / sqrt(N),
+    CI_Lower = Mean - 1.96 * SE,
+    CI_Upper = Mean + 1.96 * SE,
+    .groups = "drop"
+  )
+
+temporal_stability |>
+  gt_readable() |>
+  tab_header(
+    title = "Temporal Stability by Era",
+    subtitle = "Within-era dispersion of the additive PSI"
+  ) |>
+  fmt_number(columns = c(Mean, SD, SE, CI_Lower, CI_Upper), decimals = 3)
+```
+
+# Validation summary
+
+The summary below reports the main measurement evidence in compact form. It is intended as a replication checkpoint rather than a claim that any single statistic fully validates the measure.
+
+```{r}
+#| label: validation-summary
+
+validation_summary <- tibble(
+  Check = c(
+    "Temporal coverage",
+    "Aggregation sensitivity",
+    "Component sensitivity",
+    "Internal consistency",
+    "Dimensionality",
+    "Known-event response",
+    "V-Dem and external comparison"
+  ),
+  Evidence = c(
+    "Final components available from 1789",
+    "Additive, geometric, and hybrid specifications preserve the same pattern",
+    "Leave-one-component-out checks preserve the same pattern",
+    paste0("Raw alpha = ", round(alpha_result$total$raw_alpha, 3)),
+    paste0("PC1 explains ", round(var_explained[1], 1), "% of variance"),
+    "PSI moves in expected directions around major historical events",
+    if (has_polity2) "Era-specific correlations distinguish PSI from procedural democracy; Polity2 is retained as an independent comparator" else "Era-specific correlations distinguish PSI from procedural democracy; Polity2 was not available in the raw file"
+  )
+)
+
+validation_summary |>
+  gt_readable() |>
+  tab_header(title = "Summary of Measurement Evidence")
+```
+
+\newpage
+
+# Export final PSI data
+
+The final derived object is saved once and used by downstream QMDs. This keeps the workflow modular: `01_measurement.qmd` builds the measure, while later files use the completed PSI dataset. The standardized `polity2_01` variable is carried forward only as a procedural-democracy robustness comparator.
+
+```{r}
+#| label: export-data
+
+export_vars <- c(
+  "country_name", "country_text_id", "year", "era",
+  names(psi_components),
+  paste0(names(psi_components), "_norm"),
+  "v2x_polyarchy", "v2x_libdem", "v2x_partipdem", "v2x_delibdem", "v2x_egaldem",
+  "polity2_raw", "polity2_01", "polity2_source",
+  "polyarchy_norm", "polyarchy_norm_low", "polyarchy_norm_high",
+  "psi_additive", "psi_additive_low", "psi_additive_high",
+  "psi_geometric_raw", "psi_geometric", "psi_core", "psi_coercion", "psi_gated", "psi_hybrid"
+)
+
+usa_psi_final <- usa_psi |>
+  select(any_of(export_vars))
+
+save(
+  usa_psi_final,
+  psi_components,
+  component_dimensions,
+  aggregation_summary,
+  method_correlations,
+  event_response,
+  alpha_table,
+  alpha_drop,
+  pca_variance,
+  pca_loadings,
+  kmo_table,
+  era_correlations,
+  full_correlations,
+  temporal_stability,
+  validation_summary,
+  file = here::here("data", "derived", "usa_psi_final.rda")
+)
+
+tibble(
+  Output = "data/derived/usa_psi_final.rda",
+  Contents = "Primary R data object for downstream QMDs"
+) |>
+  gt_readable() |>
+  tab_header(title = "Saved Output")
+```
+
+# Session info
+
+```{r}
+#| label: session-info
+
+sessionInfo()
+```

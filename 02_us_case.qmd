@@ -1,0 +1,914 @@
+---
+title: "02 U.S. Case"
+subtitle: "Institutional democracy and group-centered power-sharing"
+author: "Jessala A. Grijalva"
+date: today
+format:
+  pdf:
+    toc: true
+    toc-depth: 2
+    number-sections: false
+    pdf-engine: xelatex
+    fontsize: 10.5pt
+    geometry:
+      - landscape
+      - margin=0.6in
+    include-in-header:
+      text: |
+        \usepackage{float}
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+# Purpose
+
+This file applies the Power-Sharing Index (PSI) to the U.S. case after the measure has been constructed in `01_measurement.qmd`. It compares group-centered power-sharing with established V-Dem democracy indices, estimates a power-sharing deficit, and runs simple descriptive diagnostics to identify what belongs in the manuscript, appendix, or replication materials.
+
+# Setup
+
+```{r}
+#| label: setup
+
+if (!requireNamespace("pacman", quietly = TRUE)) {
+  install.packages("pacman")
+}
+
+pacman::p_load(
+  tidyverse,
+  here,
+  gt,
+  scales,
+  zoo,
+  patchwork,
+  knitr
+)
+
+dir.create(here::here("data", "derived"), recursive = TRUE, showWarnings = FALSE)
+
+# Okabe-Ito colorblind-safe palette.
+# Use named constants; do not inline hex codes in plots.
+OI_BLACK <- "#000000"
+OI_ORANGE <- "#E69F00"
+OI_SKY_BLUE <- "#56B4E9"
+OI_BLUISH_GREEN <- "#009E73"
+OI_YELLOW <- "#F0E442"
+OI_BLUE <- "#0072B2"
+OI_VERMILLION <- "#D55E00"
+OI_REDDISH_PURPLE <- "#CC79A7"
+
+PSI_COLOR <- OI_BLUE
+ELEC_COLOR <- OI_ORANGE
+GRID_COLOR <- "gray85"
+BASE_FONT <- ""
+
+theme_psi <- function(base_size = 11) {
+  theme_minimal(base_size = base_size, base_family = BASE_FONT) +
+    theme(
+      legend.position = "bottom",
+      axis.text = element_text(size = rel(0.85)),
+      axis.title = element_text(size = rel(0.95)),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = GRID_COLOR, linewidth = 0.25),
+      plot.title = element_blank(),
+      plot.subtitle = element_blank(),
+      plot.caption = element_blank()
+    )
+}
+
+gt_readable <- function(data) {
+  data |>
+    gt() |>
+    tab_options(
+      table.width = pct(96),
+      table.font.size = px(10),
+      data_row.padding = px(3),
+      column_labels.padding = px(4),
+      heading.padding = px(5),
+      latex.tbl.pos = "H"
+    )
+}
+
+safe_cor <- function(x, y) {
+  ok <- complete.cases(x, y)
+  if (sum(ok) < 3) return(NA_real_)
+  if (sd(x[ok]) == 0 || sd(y[ok]) == 0) return(NA_real_)
+  cor(x[ok], y[ok])
+}
+
+get_value <- function(data, variable, year_value) {
+  if (!variable %in% names(data)) return(NA_real_)
+  value <- data |> filter(year == year_value) |> pull(all_of(variable))
+  if (length(value) == 0) NA_real_ else value[1]
+}
+
+normalize_01 <- function(x) {
+  rng <- range(x, na.rm = TRUE)
+  if (!all(is.finite(rng)) || diff(rng) == 0) {
+    return(rep(NA_real_, length(x)))
+  }
+  (x - rng[1]) / diff(rng)
+}
+
+normalize_01_bounds <- function(x, reference) {
+  rng <- range(reference, na.rm = TRUE)
+  if (!all(is.finite(rng)) || diff(rng) == 0) {
+    return(rep(NA_real_, length(x)))
+  }
+  pmin(pmax((x - rng[1]) / diff(rng), 0), 1)
+}
+```
+
+\newpage
+
+# Load derived PSI data
+
+This file does not rebuild the PSI. It loads the final derived object created by `01_measurement.qmd`, which keeps the workflow modular and makes the measurement file the single source of truth.
+
+```{r}
+#| label: load-derived-data
+
+derived_path <- here::here("data", "derived", "usa_psi_final.rda")
+
+if (!file.exists(derived_path)) {
+  stop(
+    "Derived PSI file not found at data/derived/usa_psi_final.rda. ",
+    "Render 01_measurement.qmd before rendering this file."
+  )
+}
+
+load(derived_path)
+
+if (!exists("usa_psi_final")) {
+  stop("The file data/derived/usa_psi_final.rda does not contain `usa_psi_final`.")
+}
+
+# Backward-compatible Polity standardization. QMD 1 now exports polity2_01,
+# but this fallback prevents QMD 2 from breaking if an older derived object is loaded.
+if (!"polity2_01" %in% names(usa_psi_final)) {
+  polity_candidates <- c("e_polity2", "e_p_polity")
+  polity_col <- intersect(polity_candidates, names(usa_psi_final))[1]
+
+  if (is.na(polity_col)) {
+    usa_psi_final <- usa_psi_final |>
+      mutate(
+        polity2_raw = NA_real_,
+        polity2_01 = NA_real_,
+        polity2_source = NA_character_
+      )
+  } else {
+    usa_psi_final <- usa_psi_final |>
+      mutate(
+        polity2_raw = as.numeric(.data[[polity_col]]),
+        polity2_raw = if_else(
+          !is.na(polity2_raw) & polity2_raw >= -10 & polity2_raw <= 10,
+          polity2_raw,
+          NA_real_
+        ),
+        polity2_01 = (polity2_raw + 10) / 20,
+        polity2_source = polity_col
+      )
+  }
+}
+
+if (!"polity2_raw" %in% names(usa_psi_final)) {
+  usa_psi_final <- usa_psi_final |> mutate(polity2_raw = NA_real_)
+}
+
+if (!"polity2_source" %in% names(usa_psi_final)) {
+  usa_psi_final <- usa_psi_final |> mutate(polity2_source = NA_character_)
+}
+
+has_deficit_uncertainty <- all(c(
+  "polyarchy_norm_low", "polyarchy_norm_high",
+  "psi_additive_low", "psi_additive_high"
+) %in% names(usa_psi_final))
+
+usa_case <- usa_psi_final |>
+  arrange(year) |>
+  mutate(
+    psi_main = psi_additive,
+    electoral_global = v2x_polyarchy,
+    electoral_within = normalize_01(v2x_polyarchy),
+    electoral_within_low = if ("polyarchy_norm_low" %in% names(usa_psi_final)) {
+      normalize_01_bounds(polyarchy_norm_low, v2x_polyarchy)
+    } else {
+      NA_real_
+    },
+    electoral_within_high = if ("polyarchy_norm_high" %in% names(usa_psi_final)) {
+      normalize_01_bounds(polyarchy_norm_high, v2x_polyarchy)
+    } else {
+      NA_real_
+    },
+    power_sharing_deficit = electoral_within - psi_main,
+    power_sharing_deficit_global = electoral_global - psi_main,
+    polity_norm = polity2_01,
+    polity_deficit = polity_norm - psi_main,
+    deficit_low = if (has_deficit_uncertainty) {
+      electoral_within_low - psi_additive_high
+    } else {
+      NA_real_
+    },
+    deficit_high = if (has_deficit_uncertainty) {
+      electoral_within_high - psi_additive_low
+    } else {
+      NA_real_
+    }
+  )
+
+has_polity2 <- any(!is.na(usa_case$polity_norm))
+
+tibble(
+  `Derived file` = "data/derived/usa_psi_final.rda",
+  `First year` = min(usa_case$year, na.rm = TRUE),
+  `Last year` = max(usa_case$year, na.rm = TRUE),
+  `Country-years` = nrow(usa_case)
+) |>
+  gt_readable() |>
+  tab_header(title = "Loaded Derived PSI Data")
+```
+
+# Define comparison measures
+
+The additive PSI is used as the main descriptive score because it is transparent and directly interpretable. The geometric and hybrid specifications remain available for robustness checks, and the institutional comparison is anchored in V-Dem’s Electoral Democracy Index because it has full long-run coverage for the U.S. series.
+
+```{r}
+#| label: define-comparison-measures
+
+vdem_indices <- c(
+  v2x_polyarchy = "Electoral Democracy",
+  v2x_libdem = "Liberal Democracy",
+  v2x_partipdem = "Participatory Democracy",
+  v2x_delibdem = "Deliberative Democracy",
+  v2x_egaldem = "Egalitarian Democracy"
+)
+
+vdem_indices_present <- vdem_indices[names(vdem_indices) %in% names(usa_case)]
+
+comparison_inventory <- tibble(
+  Variable = names(vdem_indices_present),
+  Measure = unname(vdem_indices_present)
+) |>
+  mutate(
+    First = map_dbl(Variable, ~ min(usa_case$year[!is.na(usa_case[[.x]])], na.rm = TRUE)),
+    Last = map_dbl(Variable, ~ max(usa_case$year[!is.na(usa_case[[.x]])], na.rm = TRUE)),
+    Coverage = paste0(First, "-", Last)
+  ) |>
+  select(Measure, Variable, Coverage)
+
+comparison_inventory |>
+  gt_readable() |>
+  tab_header(
+    title = "V-Dem Comparison Measures",
+    subtitle = "Available U.S. coverage in the derived PSI dataset"
+  )
+```
+
+
+# External procedural comparator
+
+Polity2 is carried forward as an optional external procedural-democracy comparator when it is available in the V-Dem file. It is not part of PSI construction. It is used only to check whether the power-sharing pattern also appears against a non-V-Dem democracy scale. If no usable Polity2 data are available, all Polity outputs are omitted cleanly.
+
+```{r}
+#| label: polity-coverage
+
+polity_inventory <- usa_case |>
+  summarise(
+    Variable = "polity2_01",
+    Source = if (all(is.na(polity2_source))) "Not available" else first(na.omit(polity2_source)),
+    Coverage = if (!has_polity2) {
+      "Not available"
+    } else {
+      paste0(
+        min(year[!is.na(polity_norm)], na.rm = TRUE),
+        "-",
+        max(year[!is.na(polity_norm)], na.rm = TRUE)
+      )
+    },
+    `Usable country-years` = sum(!is.na(polity_norm)),
+    Scale = "Polity2 rescaled from -10 to 10 onto 0 to 1"
+  )
+
+polity_inventory |>
+  gt_readable() |>
+  tab_header(
+    title = "External Procedural Comparator",
+    subtitle = "Polity2 coverage in the U.S. case"
+  )
+```
+
+\newpage
+
+# Descriptive trajectories
+
+The first descriptive comparison places PSI beside Electoral Democracy on a common within-case scale. Electoral Democracy is expressed as its position within the U.S. series' observed historical range, while PSI is the additive power-sharing score constructed in the measurement file. This is the cleanest diagnostic for the paper's central contrast: institutional democratic development and group-centered power-sharing are related, but they are not identical.
+
+```{r}
+#| label: psi-electoral-trajectory
+#| fig-pos: H
+#| fig-width: 7.5
+#| fig-height: 4.0
+#| fig-cap: "PSI and Electoral Democracy (within-case scale) in the U.S. case."
+
+psi_electoral_data <- usa_case |>
+  select(year, psi_main, electoral_within) |>
+  pivot_longer(-year, names_to = "Measure", values_to = "Value") |>
+  mutate(
+    Measure = recode(
+      Measure,
+      psi_main = "Power-Sharing Index",
+      electoral_within = "Electoral Democracy (within-case)"
+    ),
+    Measure = factor(Measure, levels = c("Power-Sharing Index", "Electoral Democracy (within-case)"))
+  )
+
+psi_electoral_plot <- psi_electoral_data |>
+  ggplot(aes(x = year, y = Value, color = Measure, linetype = Measure)) +
+  geom_line(linewidth = 0.9, na.rm = TRUE) +
+  geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", alpha = 0.35) +
+  scale_color_manual(values = c(
+    "Power-Sharing Index" = PSI_COLOR,
+    "Electoral Democracy (within-case)" = ELEC_COLOR
+  )) +
+  scale_linetype_manual(values = c(
+    "Power-Sharing Index" = "solid",
+    "Electoral Democracy (within-case)" = "longdash"
+  )) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(x = NULL, y = "Index value") +
+  theme_psi()
+
+psi_electoral_plot
+```
+
+
+The Polity comparison is a robustness check against an external procedural-democracy scale. If PSI diverges from Polity2 as well as from V-Dem democracy indices, the group-centered power-sharing pattern is less dependent on V-Dem’s internal democracy measurement architecture.
+
+```{r}
+#| label: psi-polity-trajectory
+#| fig-pos: H
+#| fig-width: 7.5
+#| fig-height: 4.0
+
+if (has_polity2) {
+  psi_polity_plot <- usa_case |>
+    select(year, psi_main, polity_norm) |>
+    pivot_longer(-year, names_to = "Measure", values_to = "Value") |>
+    mutate(
+      Measure = recode(
+        Measure,
+        psi_main = "Power-Sharing Index",
+        polity_norm = "Polity2"
+      ),
+      Measure = factor(Measure, levels = c("Power-Sharing Index", "Polity2"))
+    ) |>
+    ggplot(aes(x = year, y = Value, color = Measure, linetype = Measure)) +
+    geom_line(linewidth = 0.9, na.rm = TRUE) +
+    geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", alpha = 0.35) +
+    scale_color_manual(values = c(
+      "Power-Sharing Index" = PSI_COLOR,
+      "Polity2" = OI_REDDISH_PURPLE
+    )) +
+    scale_linetype_manual(values = c(
+      "Power-Sharing Index" = "solid",
+      "Polity2" = "dashed"
+    )) +
+    scale_y_continuous(limits = c(0, 1), labels = percent) +
+    labs(x = NULL, y = "Index value") +
+    theme_psi()
+
+  psi_polity_plot
+} else {
+  tibble(Note = "Polity2 is not available in the exported PSI dataset, so this external-comparator figure is omitted.") |>
+    gt_readable() |>
+    tab_header(title = "Polity2 Comparison Omitted")
+}
+```
+
+# Broader V-Dem comparison from 1900
+
+The broader five-index comparison begins in 1900 because Egalitarian Democracy and Deliberative Democracy do not provide coverage before 1900 in the U.S. series. Restricting this panel to 1900 onward keeps every plotted index on its actually observed support rather than implying pre-1900 values that V-Dem does not supply. The full-period institutional comparison remains the Electoral Democracy contrast above, which covers 1789 onward.
+
+```{r}
+#| label: psi-vdem-trajectories
+#| fig-pos: H
+#| fig-width: 8
+#| fig-height: 4.1
+#| fig-cap: "PSI compared with V-Dem democracy indices, 1900 onward. Egalitarian and Deliberative Democracy are unavailable before 1900."
+
+vdem_long <- usa_case |>
+  filter(year >= 1900) |>
+  select(year, psi_main, all_of(names(vdem_indices_present))) |>
+  pivot_longer(-year, names_to = "Variable", values_to = "Value") |>
+  mutate(
+    Measure = recode(
+      Variable,
+      psi_main = "Power-Sharing Index",
+      !!!vdem_indices_present
+    ),
+    Measure = factor(
+      Measure,
+      levels = c("Power-Sharing Index", unname(vdem_indices_present))
+    )
+  )
+
+vdem_trajectory_plot <- vdem_long |>
+  ggplot(aes(x = year, y = Value, color = Measure, linetype = Measure)) +
+  geom_line(linewidth = 0.75, na.rm = TRUE) +
+  scale_color_manual(values = c(
+    "Power-Sharing Index" = PSI_COLOR,
+    "Electoral Democracy" = OI_ORANGE,
+    "Liberal Democracy" = OI_BLUISH_GREEN,
+    "Participatory Democracy" = OI_REDDISH_PURPLE,
+    "Deliberative Democracy" = OI_SKY_BLUE,
+    "Egalitarian Democracy" = OI_VERMILLION
+  )) +
+  scale_linetype_manual(values = c(
+    "Power-Sharing Index" = "solid",
+    "Electoral Democracy" = "longdash",
+    "Liberal Democracy" = "dashed",
+    "Participatory Democracy" = "dotdash",
+    "Deliberative Democracy" = "twodash",
+    "Egalitarian Democracy" = "dotted"
+  )) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(x = NULL, y = "Index value") +
+  theme_psi()
+
+vdem_trajectory_plot
+```
+
+\newpage
+
+# Power-sharing deficit
+
+The power-sharing deficit is defined symmetrically within the polity's own history: Electoral Democracy is expressed as its position within the U.S. series' observed range and PSI is the additive power-sharing score constructed in the measurement file. Positive values indicate years in which institutional democratic development exceeds group-centered power-sharing. The asymmetric definition using globally scaled Electoral Democracy is retained as a robustness specification. If V-Dem uncertainty columns are available, the figure includes a conservative uncertainty ribbon.
+
+```{r}
+#| label: power-sharing-deficit
+#| fig-pos: H
+#| fig-width: 7.5
+#| fig-height: 4.0
+#| fig-cap: "Power-sharing deficit using Electoral Democracy as the institutional baseline."
+
+deficit_plot <- usa_case |>
+  ggplot(aes(x = year, y = power_sharing_deficit)) +
+  geom_ribbon(
+    aes(ymin = deficit_low, ymax = deficit_high),
+    fill = PSI_COLOR,
+    alpha = 0.18,
+    na.rm = TRUE
+  ) +
+  geom_hline(yintercept = 0, linewidth = 0.35) +
+  geom_line(color = PSI_COLOR, linewidth = 0.9, na.rm = TRUE) +
+  geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", alpha = 0.35) +
+  scale_y_continuous(labels = percent) +
+  labs(x = NULL, y = "Electoral Democracy (within-case) minus PSI") +
+  theme_psi()
+
+deficit_plot
+```
+
+```{r}
+#| label: deficit-era-summary
+
+era_summary <- usa_case |>
+  group_by(era) |>
+  summarise(
+    N = n(),
+    PSI = mean(psi_main, na.rm = TRUE),
+    `Electoral (global)` = mean(electoral_global, na.rm = TRUE),
+    `Electoral (within-case)` = mean(electoral_within, na.rm = TRUE),
+    Deficit = mean(power_sharing_deficit, na.rm = TRUE),
+    `Max deficit` = max(power_sharing_deficit, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+era_summary |>
+  gt_readable() |>
+  tab_header(
+    title = "Era-Level Summary",
+    subtitle = "PSI, Electoral Democracy, and the power-sharing deficit"
+  ) |>
+  fmt_number(columns = -c(era, N), decimals = 3)
+```
+
+
+# External-comparator deficit
+
+The Polity-based deficit uses the same logic as the Electoral Democracy deficit, but substitutes the rescaled Polity2 score as the procedural-democracy baseline. This is a robustness check rather than the main empirical estimand.
+
+```{r}
+#| label: polity-deficit-summary
+
+if (has_polity2) {
+  polity_deficit_summary <- usa_case |>
+    filter(!is.na(polity_norm)) |>
+    group_by(era) |>
+    summarise(
+      N = n(),
+      PSI = mean(psi_main, na.rm = TRUE),
+      Polity2 = mean(polity_norm, na.rm = TRUE),
+      `Polity deficit` = mean(polity_deficit, na.rm = TRUE),
+      .groups = "drop"
+    )
+} else {
+  polity_deficit_summary <- tibble(
+    Note = "Polity2 is not available in the exported PSI dataset, so the Polity-based deficit is omitted."
+  )
+}
+
+polity_deficit_summary |>
+  gt_readable() |>
+  tab_header(
+    title = "Polity-Based Power-Sharing Deficit",
+    subtitle = if (has_polity2) "External procedural baseline" else "Omitted because Polity2 is unavailable"
+  ) |>
+  fmt_number(columns = where(is.numeric), decimals = 3)
+```
+
+# Component trajectories
+
+```{r}
+#| label: component-trajectories
+#| fig-pos: H
+#| fig-width: 8
+#| fig-height: 4.1
+#| fig-cap: "Normalized PSI component trajectories."
+
+component_vars <- c(
+  v2pepwrsoc_norm = "Social Group Power",
+  v2pepwrgen_norm = "Gender Power",
+  v2clsocgrp_norm = "Civil Liberties Equality",
+  v2cltort_norm = "Freedom from Torture",
+  v2clkill_norm = "Freedom from Killings"
+)
+
+components_long <- usa_case |>
+  select(year, all_of(names(component_vars))) |>
+  pivot_longer(-year, names_to = "Variable", values_to = "Value") |>
+  mutate(
+    Component = recode(Variable, !!!component_vars),
+    Component = factor(Component, levels = unname(component_vars))
+  )
+
+component_plot <- components_long |>
+  ggplot(aes(x = year, y = Value, color = Component, linetype = Component)) +
+  geom_line(linewidth = 0.75, na.rm = TRUE) +
+  scale_color_manual(values = c(
+    "Social Group Power" = OI_BLUE,
+    "Gender Power" = OI_VERMILLION,
+    "Civil Liberties Equality" = OI_BLUISH_GREEN,
+    "Freedom from Torture" = OI_ORANGE,
+    "Freedom from Killings" = OI_REDDISH_PURPLE
+  )) +
+  scale_linetype_manual(values = c(
+    "Social Group Power" = "solid",
+    "Gender Power" = "longdash",
+    "Civil Liberties Equality" = "dashed",
+    "Freedom from Torture" = "dotdash",
+    "Freedom from Killings" = "twodash"
+  )) +
+  scale_y_continuous(limits = c(0, 1), labels = percent) +
+  labs(x = NULL, y = "Normalized component value") +
+  theme_psi()
+
+component_plot
+```
+
+\newpage
+
+# Robustness across PSI specifications
+
+This check asks whether the power-sharing deficit depends on the additive PSI specification or the within-case scaling decision. If the deficit remains visible across additive, geometric, gated, and hybrid PSI variants, and under the asymmetric global Electoral Democracy definition, the substantive pattern is vulnerable neither to aggregation choice nor to the scaling decision.
+
+```{r}
+#| label: deficit-robustness
+#| fig-pos: H
+#| fig-width: 7.5
+#| fig-height: 4.0
+#| fig-cap: "Power-sharing deficit across PSI specifications."
+
+deficit_specs <- usa_case |>
+  transmute(
+    year,
+    `Additive PSI deficit` = electoral_within - psi_additive,
+    `Asymmetric global Electoral` = power_sharing_deficit_global,
+    `Geometric PSI deficit` = electoral_within - psi_geometric,
+    `Gated PSI deficit` = if ("psi_gated" %in% names(usa_case)) electoral_within - psi_gated else NA_real_,
+    `Hybrid PSI deficit` = electoral_within - psi_hybrid
+  ) |>
+  pivot_longer(-year, names_to = "Specification", values_to = "Deficit")
+
+deficit_specs_plot <- deficit_specs |>
+  ggplot(aes(x = year, y = Deficit, color = Specification, linetype = Specification)) +
+  geom_hline(yintercept = 0, linewidth = 0.35) +
+  geom_line(linewidth = 0.8, na.rm = TRUE) +
+  scale_color_manual(values = c(
+    "Additive PSI deficit" = OI_BLACK,
+    "Asymmetric global Electoral" = OI_YELLOW,
+    "Geometric PSI deficit" = OI_BLUISH_GREEN,
+    "Gated PSI deficit" = OI_VERMILLION,
+    "Hybrid PSI deficit" = PSI_COLOR
+  )) +
+  scale_linetype_manual(values = c(
+    "Additive PSI deficit" = "solid",
+    "Asymmetric global Electoral" = "dotted",
+    "Geometric PSI deficit" = "longdash",
+    "Gated PSI deficit" = "dashed",
+    "Hybrid PSI deficit" = "dotdash"
+  )) +
+  scale_y_continuous(labels = percent) +
+  labs(x = NULL, y = "Deficit") +
+  theme_psi()
+
+deficit_specs_plot
+```
+
+```{r}
+#| label: deficit-spec-summary
+
+deficit_spec_summary <- deficit_specs |>
+  group_by(Specification) |>
+  summarise(
+    Mean = mean(Deficit, na.rm = TRUE),
+    Median = median(Deficit, na.rm = TRUE),
+    Max = max(Deficit, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+deficit_spec_summary |>
+  gt_readable() |>
+  tab_header(
+    title = "Deficit Summary Across PSI Specifications",
+    subtitle = "Symmetric within-case deficit; asymmetric definition included as scaling robustness"
+  ) |>
+  fmt_number(columns = c(Mean, Median, Max), decimals = 3)
+```
+
+# Temporal-ordering diagnostics
+
+These diagnostics ask whether changes in group-centered power-sharing and institutional democracy move together or unevenly over time. They do not estimate causality; they are included to assess whether the observed trajectories raise a serious temporal-ordering question for future work.
+
+```{r}
+#| label: change-scores
+#| fig-pos: H
+
+change_data <- usa_case |>
+  arrange(year) |>
+  mutate(
+    delta_psi = psi_main - lag(psi_main),
+    delta_electoral = if ("v2x_polyarchy" %in% names(usa_case)) .data$v2x_polyarchy - lag(.data$v2x_polyarchy) else NA_real_,
+    delta_liberal = if ("v2x_libdem" %in% names(usa_case)) .data$v2x_libdem - lag(.data$v2x_libdem) else NA_real_,
+    delta_participatory = if ("v2x_partipdem" %in% names(usa_case)) .data$v2x_partipdem - lag(.data$v2x_partipdem) else NA_real_
+  )
+
+change_plot <- change_data |>
+  select(year, delta_psi, delta_electoral) |>
+  pivot_longer(-year, names_to = "Measure", values_to = "Annual change") |>
+  mutate(
+    Measure = recode(
+      Measure,
+      delta_psi = "Change in PSI",
+      delta_electoral = "Change in Electoral Democracy"
+    )
+  ) |>
+  ggplot(aes(x = year, y = `Annual change`, color = Measure, linetype = Measure)) +
+  geom_hline(yintercept = 0, linewidth = 0.35) +
+  geom_line(linewidth = 0.75, na.rm = TRUE) +
+  scale_color_manual(values = c(
+    "Change in PSI" = PSI_COLOR,
+    "Change in Electoral Democracy" = ELEC_COLOR
+  )) +
+  scale_linetype_manual(values = c(
+    "Change in PSI" = "solid",
+    "Change in Electoral Democracy" = "longdash"
+  )) +
+  labs(x = NULL, y = "Annual change") +
+  theme_psi()
+
+change_plot
+```
+
+```{r}
+#| label: lagged-correlations
+
+lagged_correlation_table <- tibble(
+  Relationship = c(
+    "Same-year ΔPSI and ΔElectoral Democracy",
+    "ΔPSI lagged 1 year and ΔElectoral Democracy",
+    "ΔPSI lagged 5 years and ΔElectoral Democracy",
+    "ΔPSI lagged 10 years and ΔElectoral Democracy"
+  ),
+  Correlation = c(
+    safe_cor(change_data$delta_psi, change_data$delta_electoral),
+    safe_cor(lag(change_data$delta_psi, 1), change_data$delta_electoral),
+    safe_cor(lag(change_data$delta_psi, 5), change_data$delta_electoral),
+    safe_cor(lag(change_data$delta_psi, 10), change_data$delta_electoral)
+  )
+)
+
+lagged_correlation_table |>
+  gt_readable() |>
+  tab_header(
+    title = "Temporal-Ordering Diagnostic",
+    subtitle = "Correlations between changes in PSI and changes in Electoral Democracy"
+  ) |>
+  fmt_number(columns = Correlation, decimals = 3)
+```
+
+\newpage
+
+# Candidate manuscript and appendix outputs
+
+This table is a decision aid. It separates analyses that appear central to the manuscript from analyses that are better suited for the appendix or retained as replication checks.
+
+```{r}
+#| label: output-decision-table
+
+output_decisions <- tribble(
+  ~Output, ~Type, ~Purpose, ~Destination,
+  "PSI vs Electoral Democracy", "Figure", "Core institutional/group comparison", "Manuscript",
+  "Power-sharing deficit", "Figure", "Main empirical payoff", "Manuscript",
+  "Era summary", "Table", "Compact historical summary", "Manuscript",
+  "PSI vs V-Dem indices", "Figure", "Comparison with established measures", "Manuscript or appendix",
+  "Component trajectories", "Figure", "Composite transparency", "Appendix",
+  "Deficit robustness", "Figure/Table", "Aggregation/gated sensitivity", "Appendix",
+  "Polity comparison", "Figure/Table", "External procedural comparator if available", "Appendix",
+  "Temporal diagnostics", "Table/Figure", "Raises temporal-ordering question", "Appendix/discussion"
+)
+
+output_decisions |>
+  gt_readable() |>
+  tab_header(title = "Candidate Outputs for Manuscript and Appendix")
+```
+
+# Summary of U.S. case evidence
+
+```{r}
+#| label: case-summary
+
+case_summary <- tibble(
+  Finding = c(
+    "PSI and Electoral Democracy are not identical",
+    "The power-sharing deficit is historically concentrated",
+    "The second opening marks a large increase in group-centered power-sharing",
+    "The composite is transparent to component inspection",
+    if (has_polity2) "The pattern is visible against an external comparator" else "The external comparator is optional",
+    "Temporal ordering warrants further study"
+  ),
+  Evidence = c(
+    "Trajectory comparison shows periods of divergence between PSI and Electoral Democracy",
+    "Era summaries show the deficit is largest before full civil-rights incorporation",
+    "PSI rises sharply in the post-1965 era across specifications",
+    "Component trajectories show the histories of power, civil standing, and coercive restraint separately",
+    if (has_polity2) "Polity2 comparison provides a non-V-Dem procedural baseline" else "Polity2 was not available in the exported data and is omitted from the manuscript outputs",
+    "Change-score diagnostics allow the question to be raised without making causal claims"
+  )
+)
+
+case_summary |>
+  gt_readable() |>
+  tab_header(title = "Summary of U.S. Case Evidence")
+```
+
+# Export U.S. case results
+
+The modeling file saves one downstream object containing the main transformed data and summary tables. It does not export publication figures; those will be generated selectively when the manuscript or appendix requires them.
+
+```{r}
+#| label: export-results
+
+usa_case_results <- list(
+  usa_case = usa_case,
+  era_summary = era_summary,
+  deficit_spec_summary = deficit_spec_summary,
+  lagged_correlation_table = lagged_correlation_table,
+  polity_deficit_summary = polity_deficit_summary,
+  output_decisions = output_decisions,
+  case_summary = case_summary
+)
+
+save(
+  usa_case_results,
+  file = here::here("data", "derived", "usa_case_results.rda")
+)
+
+tibble(
+  Output = "data/derived/usa_case_results.rda",
+  Contents = "U.S. case results"
+) |>
+  gt_readable() |>
+  tab_header(title = "Saved Output")
+```
+
+# Manuscript figure
+
+This section assembles the main manuscript figure directly from the analysis objects created above. The figure is displayed in this PDF and exported once, deliberately, as `figures/GrijalvaFig1.pdf`.
+
+```{r}
+#| label: build-manuscript-figure
+#| fig-pos: H
+#| fig-width: 7.25
+#| fig-height: 8.5
+#| fig-cap: "Figure 1. Group-centered power-sharing and the power-sharing deficit in the United States."
+
+LINE_BLACK <- "black"
+LINE_GRAY <- "gray45"
+SHADE_GRAY <- "gray85"
+
+theme_manuscript <- function(base_size = 9) {
+  theme_classic(base_size = base_size, base_family = BASE_FONT) +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(size = base_size - 1),
+      axis.text = element_text(size = base_size - 1),
+      axis.title = element_text(size = base_size),
+      plot.title = element_text(face = "bold", size = base_size + 1, hjust = 0),
+      panel.grid.major.y = element_line(color = GRID_COLOR, linewidth = 0.25),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor = element_blank(),
+      plot.margin = margin(5, 8, 5, 8)
+    )
+}
+
+year_breaks <- c(1800, 1850, 1900, 1950, 2000)
+percent_axis <- scale_y_continuous(
+  limits = c(0, 1),
+  breaks = c(0, .25, .50, .75, 1),
+  labels = scales::percent_format(accuracy = 1)
+)
+
+panel_a <- ggplot(usa_case, aes(x = year, y = psi_main)) +
+  geom_line(linewidth = 0.9, color = LINE_BLACK, na.rm = TRUE) +
+  geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", linewidth = 0.35, color = LINE_GRAY) +
+  scale_x_continuous(breaks = year_breaks) +
+  percent_axis +
+  labs(title = "A. Group-centered power-sharing", x = NULL, y = "Index value") +
+  theme_manuscript()
+
+panel_b_data <- usa_case |>
+  select(year, psi_main, electoral_within) |>
+  pivot_longer(-year, names_to = "Measure", values_to = "Value") |>
+  mutate(
+    Measure = case_when(
+      Measure == "psi_main" ~ "Power-Sharing Index",
+      Measure == "electoral_within" ~ "Electoral Democracy",
+      TRUE ~ Measure
+    ),
+    Measure = factor(Measure, levels = c("Power-Sharing Index", "Electoral Democracy"))
+  )
+
+panel_b <- ggplot(panel_b_data, aes(x = year, y = Value, linetype = Measure)) +
+  geom_line(linewidth = 0.85, color = LINE_BLACK, na.rm = TRUE) +
+  geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", linewidth = 0.35, color = LINE_GRAY) +
+  scale_linetype_manual(values = c("Power-Sharing Index" = "solid", "Electoral Democracy" = "longdash")) +
+  scale_x_continuous(breaks = year_breaks) +
+  percent_axis +
+  labs(title = "B. PSI and Electoral Democracy", x = NULL, y = "Index value") +
+  theme_manuscript()
+
+panel_c <- ggplot(usa_case, aes(x = year, y = power_sharing_deficit)) +
+  geom_ribbon(aes(ymin = deficit_low, ymax = deficit_high), fill = SHADE_GRAY, alpha = 0.55, na.rm = TRUE) +
+  geom_hline(yintercept = 0, linewidth = 0.35, color = LINE_GRAY) +
+  geom_line(linewidth = 0.9, color = LINE_BLACK, na.rm = TRUE) +
+  geom_vline(xintercept = c(1865, 1896, 1965), linetype = "dashed", linewidth = 0.35, color = LINE_GRAY) +
+  scale_x_continuous(breaks = year_breaks) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(title = "C. Power-sharing deficit", x = "Year", y = "Electoral Democracy minus PSI") +
+  theme_manuscript()
+
+fig1 <- panel_a / panel_b / panel_c + plot_layout(heights = c(1, 1, 1))
+fig1
+```
+
+```{r}
+#| label: save-manuscript-figure
+
+dir.create(here::here("figures"), recursive = TRUE, showWarnings = FALSE)
+
+ggsave(
+  here::here("figures", "GrijalvaFig1.pdf"),
+  fig1,
+  width = 7.25, height = 8.5, units = "in", bg = "white"
+)
+
+tibble(
+  Output = "figures/GrijalvaFig1.pdf",
+  Use = "Vector production file for manuscript submission"
+) |>
+  gt_readable() |>
+  tab_header(title = "Exported Manuscript Figure")
+```
+
+**Figure 1. Group-centered power-sharing and the power-sharing deficit in the United States, 1789–2025.** Panel A plots the additive Power-Sharing Index. Panel B compares PSI with V-Dem Electoral Democracy, rescaled within the U.S. historical series. Panel C plots the power-sharing deficit, defined as Electoral Democracy minus PSI. Higher PSI values indicate greater group-centered democratic power-sharing. Positive deficit values indicate years in which institutional democracy exceeds group-centered power-sharing.
+
+# Session info
+
+```{r}
+#| label: session-info
+
+sessionInfo()
+```

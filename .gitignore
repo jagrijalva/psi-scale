@@ -1,33 +1,44 @@
-# Scratch folder
+# Raw V-Dem data (download directly from v-dem.net; not redistributed)
+data/raw/V-Dem-CY-Full+Others-v16.rds
+
+# Local scratch (reference material, not part of the replication package)
 scratch/
 
-# Raw data - too large for GitHub (download from v-dem.net)
-data/raw/
-
-# R and RStudio
+# R / RStudio
+.Rproj.user/
 .Rhistory
-.Rdata
+.RData
 .RDataTmp
 .Ruserdata
-.Rproj.user/
+.Renviron
 
-# Quarto render artifacts
+# Quarto
+/.quarto/
 *_files/
 *_cache/
-/.quarto/
 
-# Rendered output (reproduce via Quarto)
-*.pdf
+# Rendered HTML and TeX
 *.html
 *.tex
 
-# Large image files
-*.tiff
-
-# Mac system files
-.DS_Store
+# LaTeX auxiliary files
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
 
 # Temporary files
 *.tmp
 *.temp
 *~
+
+# OS metadata
+.DS_Store
+Thumbs.db
